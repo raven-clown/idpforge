@@ -14,7 +14,7 @@ type createAPIClientRequest struct {
 	// AllowedFields governs the simple /external/v1 read-only path.
 	AllowedFields []string `json:"allowed_fields"`
 	// Scopes are "resource:action" grants for the full /api/v1 admin API,
-	// e.g. ["users:read","users:write"]. The caller can only grant a scope
+	// e.g. ["users:read","users:manage"]. The caller can only grant a scope
 	// they themselves hold, so a token can never come back with more power
 	// than the admin who issued it.
 	Scopes                 []string `json:"scopes"`

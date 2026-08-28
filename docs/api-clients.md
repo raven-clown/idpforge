@@ -35,20 +35,34 @@ Any `/api/v1` route works the same way for a token as it does for a logged
 in admin; `requirePermission` checks the token's scopes instead of a
 resolved user's RBAC.
 
+### Available scopes
+
+A scope is `resource:action`. The resource names match the `/api/v1` route
+groups exactly, and each has a `read` action, a coarser `manage` action
+(covers create/update/delete), or both:
+
+| Resource | Actions | Covers |
+|---|---|---|
+| `users` | `read`, `manage` | list/get users (`read`); create/update/delete/offboard/device-credentials (`manage`) |
+| `rbac` | `manage` | roles, permissions, groups, and all role/group/user assignment endpoints |
+| `iot` | `read`, `manage` | query device event history (`read`); register devices (`manage`) |
+| `api_clients` | `manage` | create/list/delete other API clients |
+
+These are plain strings checked by `requirePermission`, not rows that have
+to exist anywhere first, so any of the combinations above just work.
+`resource/*` wildcards (e.g. `users/*:read`) work too but only matter once
+your own code checks a custom resource name (through `/forwardauth`, for
+example) rather than these fixed route groups.
+
 ### Scope presets
 
 | Use case | Scopes | Notes |
 |---|---|---|
-| AI assistant, general read access | `["users:read", "iot:read"]` | Can look up users and query IoT event history. Cannot create/edit/delete anything. |
-| AI assistant, allowed to manage users | `["users:read", "users:write"]` | Add `"users:write"` only if the assistant should be able to create/update/offboard users on your behalf. |
-| Read-only reporting bot | `["users:read", "iot:read", "reports/*:read"]` | `reports/*` covers every resource under that folder with one grant. |
+| AI assistant, read-only | `["users:read", "iot:read"]` | Can look up users and query IoT event history. Cannot create/edit/delete anything. |
+| AI assistant, can manage users | `["users:read", "users:manage"]` | Add `users:manage` only if the assistant should create/update/offboard users on your behalf. |
+| Full admin token | `["users:manage", "rbac:manage", "iot:manage", "api_clients:manage"]` | Equivalent to what a human admin can do. Grant sparingly. |
 | Canteen kiosk / door controller | none (uses `X-Device-Key`, not this token type) | See [integration-matrix.md](integration-matrix.md); hardware check-ins go through `/iot/checkin`, not `/api/v1`. |
-| CI/deploy automation | `["api_clients:read"]` | Least-privilege example: can list clients for auditing, nothing else. |
-
-`users:write` is not a real granted-by-default scope; permissions must
-exist in the `permissions` table (`rbac_handlers.go` / `POST
-/api/v1/rbac/permissions`) before they can be granted to a role or an API
-client. Create the ones you need once, then reuse them.
+| Read-only auditing tool | `["users:read", "iot:read", "api_clients:manage"]` | `api_clients:manage` is required to list clients since there's no separate read-only action for that resource. |
 
 ## Simple field-filtered access (`/external/v1`, no scopes)
 

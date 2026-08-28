@@ -91,6 +91,11 @@ Multi-arch (`linux/amd64`, `linux/arm64`) built and pushed by
 
 See [docs/integration-matrix.md](docs/integration-matrix.md).
 
+## API clients (scoped tokens, AI/automation access)
+
+See [docs/api-clients.md](docs/api-clients.md) for scope presets and
+examples.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

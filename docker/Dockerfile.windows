@@ -1,0 +1,11 @@
+FROM golang:1.23-nanoserver-ltsc2022 AS build
+WORKDIR C:\\src
+COPY go.mod go.sum .
+RUN go mod download
+COPY . .
+RUN go build -ldflags "-s -w" -o C:\\out\\idpforge-server.exe .\\cmd\\server
+
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2022
+COPY --from=build C:\\out\\idpforge-server.exe C:\\idpforge\\idpforge-server.exe
+EXPOSE 8080
+ENTRYPOINT ["C:\\idpforge\\idpforge-server.exe"]

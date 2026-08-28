@@ -1,0 +1,21 @@
+[Unit]
+Description=IdpForge SSO server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=idpforge
+Group=idpforge
+EnvironmentFile=-/etc/idpforge/idpforge.env
+ExecStart=/usr/local/bin/idpforge-server
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/idpforge /var/log/idpforge
+
+[Install]
+WantedBy=multi-user.target

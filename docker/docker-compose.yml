@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: idpforge
+      POSTGRES_PASSWORD: idpforge
+      POSTGRES_DB: idpforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  idpforge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.linux
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      IDPFORGE_DB_DRIVER: postgres
+      IDPFORGE_DB_DSN: postgres://idpforge:idpforge@postgres:5432/idpforge?sslmode=disable
+      IDPFORGE_REDIS_ADDR: redis:6379
+      IDPFORGE_OIDC_ISSUER: http://localhost:8080
+      IDPFORGE_BASE_URL: http://localhost:8080
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

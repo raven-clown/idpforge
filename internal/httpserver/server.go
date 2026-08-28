@@ -18,6 +18,7 @@ import (
 	"github.com/raven-clown/idpforge/internal/config"
 	"github.com/raven-clown/idpforge/internal/health"
 	"github.com/raven-clown/idpforge/internal/iot"
+	"github.com/raven-clown/idpforge/internal/metrics"
 	"github.com/raven-clown/idpforge/internal/mfa"
 	"github.com/raven-clown/idpforge/internal/rbac"
 	"github.com/raven-clown/idpforge/internal/storage"
@@ -30,63 +31,69 @@ const requestIDContextKey = "requestid" // matches requestid.ConfigDefault.Conte
 type Server struct {
 	app *fiber.App
 
-	cfg        *config.Config
-	users      *users.Repository
-	rbac       *rbac.Resolver
-	rbacAdm    *rbac.Admin
-	audit      *audit.Writer
-	oidc       *oidc.Provider
-	webauthn   *webauthn.Service
-	mfa        *mfa.Service
-	captcha    captcha.Verifier
-	storage    storage.Store
-	health     *health.Checker
-	iot        *iot.Repository
-	apiClients *apiclient.Repository
-	sessions   *sessionStore
-	cache      cache.Cache
-	log        *slog.Logger
+	cfg         *config.Config
+	users       *users.Repository
+	rbac        *rbac.Resolver
+	rbacAdm     *rbac.Admin
+	audit       *audit.Writer
+	auditReader *audit.Reader
+	metricsHist *metrics.History
+	oidc        *oidc.Provider
+	webauthn    *webauthn.Service
+	mfa         *mfa.Service
+	captcha     captcha.Verifier
+	storage     storage.Store
+	health      *health.Checker
+	iot         *iot.Repository
+	apiClients  *apiclient.Repository
+	sessions    *sessionStore
+	cache       cache.Cache
+	log         *slog.Logger
 
 	rateLimitGlobal fiber.Handler
 	rateLimitLogin  fiber.Handler
 }
 
 type Deps struct {
-	Config     *config.Config
-	Users      *users.Repository
-	RBAC       *rbac.Resolver
-	RBACAdm    *rbac.Admin
-	Audit      *audit.Writer
-	OIDC       *oidc.Provider
-	WebAuthn   *webauthn.Service
-	MFA        *mfa.Service
-	Captcha    captcha.Verifier
-	Storage    storage.Store
-	Health     *health.Checker
-	IoT        *iot.Repository
-	APIClients *apiclient.Repository
-	Cache      cache.Cache
-	Logger     *slog.Logger
+	Config      *config.Config
+	Users       *users.Repository
+	RBAC        *rbac.Resolver
+	RBACAdm     *rbac.Admin
+	Audit       *audit.Writer
+	AuditReader *audit.Reader
+	MetricsHist *metrics.History
+	OIDC        *oidc.Provider
+	WebAuthn    *webauthn.Service
+	MFA         *mfa.Service
+	Captcha     captcha.Verifier
+	Storage     storage.Store
+	Health      *health.Checker
+	IoT         *iot.Repository
+	APIClients  *apiclient.Repository
+	Cache       cache.Cache
+	Logger      *slog.Logger
 }
 
 func New(d Deps) *Server {
 	s := &Server{
-		cfg:        d.Config,
-		users:      d.Users,
-		rbac:       d.RBAC,
-		rbacAdm:    d.RBACAdm,
-		audit:      d.Audit,
-		oidc:       d.OIDC,
-		webauthn:   d.WebAuthn,
-		mfa:        d.MFA,
-		captcha:    d.Captcha,
-		storage:    d.Storage,
-		health:     d.Health,
-		iot:        d.IoT,
-		apiClients: d.APIClients,
-		sessions:   newSessionStore(d.Cache),
-		cache:      d.Cache,
-		log:        d.Logger,
+		cfg:         d.Config,
+		users:       d.Users,
+		rbac:        d.RBAC,
+		rbacAdm:     d.RBACAdm,
+		audit:       d.Audit,
+		auditReader: d.AuditReader,
+		metricsHist: d.MetricsHist,
+		oidc:        d.OIDC,
+		webauthn:    d.WebAuthn,
+		mfa:         d.MFA,
+		captcha:     d.Captcha,
+		storage:     d.Storage,
+		health:      d.Health,
+		iot:         d.IoT,
+		apiClients:  d.APIClients,
+		sessions:    newSessionStore(d.Cache),
+		cache:       d.Cache,
+		log:         d.Logger,
 	}
 
 	s.app = fiber.New(fiber.Config{

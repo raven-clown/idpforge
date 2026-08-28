@@ -110,6 +110,49 @@ export interface DeviceEvent {
   timestamp: string;
 }
 
+export interface AuditEntry {
+  id: number;
+  actor_id?: string;
+  actor_ip?: string;
+  action: string;
+  target_resource?: string;
+  target_app?: string;
+  status: string;
+  timestamp: string;
+}
+
+export interface MetricsSnapshot {
+  timestamp: string;
+  http_requests: number;
+  login_success: number;
+  login_failure: number;
+  rate_limit_rejections: number;
+}
+
+export interface Settings {
+  env: string;
+  http: { listen_addr: string; base_url: string };
+  database: { driver: string; dsn: string };
+  redis: { enabled: boolean; addr: string };
+  rate_limit: {
+    enabled: boolean;
+    max: number;
+    window_seconds: number;
+    login_max: number;
+    login_window_seconds: number;
+  };
+  captcha: { provider: string };
+  oidc: {
+    issuer: string;
+    access_token_ttl_minutes: number;
+    id_token_ttl_minutes: number;
+    refresh_token_ttl_hours: number;
+  };
+  backup: { enabled: boolean; dir: string; schedule: string; retention_days: number };
+  storage: { backend: string };
+  password_expiry_days: number;
+}
+
 export const api = {
   login: (username: string, password: string, mfa_code: string, captcha_token = "") =>
     post<{ user_id: string; mfa_required: boolean; password_change_required: boolean }>(
@@ -183,4 +226,9 @@ export const api = {
       post<{ device: Device; api_key: string }>("/api/v1/iot/devices", body),
     events: (params = "") => get<{ events: DeviceEvent[] }>(`/api/v1/iot/events${params}`),
   },
+
+  auditLogs: (params = "") => get<{ entries: AuditEntry[] }>(`/api/v1/audit-logs${params}`),
+  metricsHistory: (days = 30) =>
+    get<{ snapshots: MetricsSnapshot[] }>(`/api/v1/metrics/history?days=${days}`),
+  settings: () => get<Settings>("/api/v1/settings"),
 };

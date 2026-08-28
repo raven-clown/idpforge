@@ -23,6 +23,9 @@ var adminPermissions = [][2]string{
 	{"rbac", "manage"},
 	{"iot", "read"}, {"iot", "manage"},
 	{"api_clients", "manage"},
+	{"audit", "read"},
+	{"metrics", "read"},
+	{"settings", "read"},
 }
 
 // Run creates the first admin user, role, and permissions if the users

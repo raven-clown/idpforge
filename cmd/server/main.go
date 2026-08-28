@@ -18,6 +18,7 @@ import (
 	"github.com/raven-clown/idpforge/internal/health"
 	"github.com/raven-clown/idpforge/internal/httpserver"
 	"github.com/raven-clown/idpforge/internal/iot"
+	"github.com/raven-clown/idpforge/internal/metrics"
 	"github.com/raven-clown/idpforge/internal/mfa"
 	"github.com/raven-clown/idpforge/internal/rbac"
 	"github.com/raven-clown/idpforge/internal/service"
@@ -100,6 +101,12 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	auditWriter := audit.NewWriter(database, cfg.Audit.QueueSize, cfg.Audit.BatchSize, cfg.Audit.FlushInterval, logger)
 	auditCtx, auditCancel := context.WithCancel(ctx)
 	auditWriter.Run(auditCtx)
+	auditReader := audit.NewReader(database)
+
+	metricsHistory := metrics.NewHistory(database)
+	metricsSamplerCtx, stopMetricsSampler := context.WithCancel(ctx)
+	defer stopMetricsSampler()
+	go runMetricsSampler(metricsSamplerCtx, metricsHistory, logger)
 
 	keys, err := oidc.LoadOrGenerateKey(cfg.OIDC.SigningKeyPath)
 	if err != nil {
@@ -120,21 +127,23 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	captchaVerifier := captcha.New(cfg.Captcha.Provider, cfg.Captcha.SecretKey)
 
 	srv := httpserver.New(httpserver.Deps{
-		Config:     cfg,
-		Users:      userRepo,
-		RBAC:       resolver,
-		RBACAdm:    rbacAdmin,
-		Audit:      auditWriter,
-		OIDC:       provider,
-		WebAuthn:   waService,
-		MFA:        mfaService,
-		Captcha:    captchaVerifier,
-		Storage:    store,
-		Health:     healthChecker,
-		IoT:        iotRepo,
-		APIClients: apiClientRepo,
-		Cache:      c,
-		Logger:     logger,
+		Config:      cfg,
+		Users:       userRepo,
+		RBAC:        resolver,
+		RBACAdm:     rbacAdmin,
+		Audit:       auditWriter,
+		AuditReader: auditReader,
+		MetricsHist: metricsHistory,
+		OIDC:        provider,
+		WebAuthn:    waService,
+		MFA:         mfaService,
+		Captcha:     captchaVerifier,
+		Storage:     store,
+		Health:      healthChecker,
+		IoT:         iotRepo,
+		APIClients:  apiClientRepo,
+		Cache:       c,
+		Logger:      logger,
 	})
 
 	return service.Run(
@@ -150,6 +159,29 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 			_ = c.Close()
 		},
 	)
+}
+
+// runMetricsSampler records the current cumulative counters every 10
+// minutes so the admin UI's usage graphs have history to plot, and once
+// immediately on startup so a freshly deployed instance isn't empty.
+func runMetricsSampler(ctx context.Context, history *metrics.History, logger *slog.Logger) {
+	record := func() {
+		if err := history.Record(ctx, metrics.CurrentTotals()); err != nil {
+			logger.Warn("metrics snapshot failed", "error", err)
+		}
+	}
+	record()
+
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			record()
+		}
+	}
 }
 
 // rpIDFromBaseURL strips scheme/port from the configured base URL to get a

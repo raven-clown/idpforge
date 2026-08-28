@@ -26,7 +26,7 @@ func rateLimiter(sessions *sessionStore, max int, window time.Duration, routeLab
 			return "ip:" + c.IP()
 		},
 		LimitReached: func(c *fiber.Ctx) error {
-			metrics.RateLimitRejectionsTotal.WithLabelValues(routeLabel).Inc()
+			metrics.RecordRateLimitRejection(routeLabel)
 			return fiber.NewError(fiber.StatusTooManyRequests, "rate limit exceeded, try again later")
 		},
 	})

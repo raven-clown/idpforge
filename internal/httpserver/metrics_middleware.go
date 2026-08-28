@@ -22,7 +22,7 @@ func metricsMiddleware(c *fiber.Ctx) error {
 		status = fe.Code
 	}
 
-	metrics.HTTPRequestsTotal.WithLabelValues(c.Method(), route, strconv.Itoa(status)).Inc()
+	metrics.RecordHTTPRequest(c.Method(), route, strconv.Itoa(status))
 	metrics.HTTPRequestDuration.WithLabelValues(c.Method(), route).Observe(time.Since(start).Seconds())
 
 	return err

@@ -115,6 +115,12 @@ See [docs/integration-matrix.md](docs/integration-matrix.md).
 See [docs/api-clients.md](docs/api-clients.md) for scope presets and
 examples.
 
+## Monitoring
+
+See [docs/monitoring.md](docs/monitoring.md): a Prometheus scrape config
+and Grafana dashboard are in `deploy/monitoring/`, and the admin console
+has its own built-in usage graphs (`/usage`) that don't need either.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

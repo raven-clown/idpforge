@@ -82,6 +82,10 @@ func (s *Server) registerRoutes() {
 	clientsAdmin.Get("/", s.handleListAPIClients)
 	clientsAdmin.Delete("/:id", s.handleDeleteAPIClient)
 
+	api.Get("/audit-logs", s.requirePermission("audit", "read"), s.handleQueryAuditLogs)
+	api.Get("/metrics/history", s.requirePermission("metrics", "read"), s.handleMetricsHistory)
+	api.Get("/settings", s.requirePermission("settings", "read"), s.handleGetSettings)
+
 	// Device-authenticated (X-Device-Key), not a user session: hardware
 	// check-in endpoint for badge/face/fingerprint readers, door
 	// controllers, kiosks.

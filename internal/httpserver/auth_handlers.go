@@ -64,7 +64,7 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 		}
 	}
 
-	metrics.LoginAttemptsTotal.WithLabelValues("success").Inc()
+	metrics.RecordLoginAttempt("success")
 
 	expired := s.passwordExpired(c, user.ID)
 	sessionID, err := s.sessions.create(c.Context(), user.ID, expired)
@@ -94,6 +94,7 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 }
 
 func (s *Server) logFailedLogin(c *fiber.Ctx, username, reason string) {
+	metrics.RecordLoginAttempt(reason)
 	after, _ := json.Marshal(fiber.Map{"reason": reason})
 	s.audit.Log(audit.Entry{
 		ActorIP:        c.IP(),

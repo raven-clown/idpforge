@@ -1,0 +1,11 @@
+# Minimal scrape config for IdpForge. Point Prometheus at this and import
+# grafana-dashboard.json into Grafana with this as the data source.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: idpforge
+    static_configs:
+      - targets: ["idpforge:8080"] # change to your host:port
+    metrics_path: /metrics

@@ -13,6 +13,9 @@ import {
   Sun,
   Moon,
   ShieldHalf,
+  ScrollText,
+  BarChart3,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useMe, api } from "@/lib/useMe";
 
@@ -22,6 +25,9 @@ const NAV = [
   { href: "/roles", label: "Roles & permissions", icon: ShieldCheck },
   { href: "/api-clients", label: "API clients", icon: KeyRound },
   { href: "/iot", label: "IoT devices", icon: Cpu },
+  { href: "/usage", label: "Usage", icon: BarChart3 },
+  { href: "/audit", label: "Audit log", icon: ScrollText },
+  { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {

@@ -48,15 +48,21 @@ VALUES (%s, %s, %s, %s, %s, %s)`,
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (*User, error) {
-	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, created_at, updated_at, last_login_at
+	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, avatar_url, created_at, updated_at, last_login_at
 FROM users WHERE id = %s`, r.db.Placeholder(1))
 	return r.scanOne(r.db.QueryRowContext(ctx, q, id))
 }
 
 func (r *Repository) GetByUsername(ctx context.Context, username string) (*User, error) {
-	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, created_at, updated_at, last_login_at
+	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, avatar_url, created_at, updated_at, last_login_at
 FROM users WHERE username = %s`, r.db.Placeholder(1))
 	return r.scanOne(r.db.QueryRowContext(ctx, q, username))
+}
+
+func (r *Repository) SetAvatar(ctx context.Context, id, avatarURL string) error {
+	q := fmt.Sprintf(`UPDATE users SET avatar_url = %s WHERE id = %s`, r.db.Placeholder(1), r.db.Placeholder(2))
+	_, err := r.db.ExecContext(ctx, q, avatarURL, id)
+	return err
 }
 
 // PasswordHash returns the bcrypt hash for the given username; used only by
@@ -74,7 +80,7 @@ func (r *Repository) PasswordHash(ctx context.Context, username string) (string,
 }
 
 func (r *Repository) List(ctx context.Context, limit, offset int) ([]*User, error) {
-	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, created_at, updated_at, last_login_at
+	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, avatar_url, created_at, updated_at, last_login_at
 FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s`, r.db.Placeholder(1), r.db.Placeholder(2))
 
 	rows, err := r.db.QueryContext(ctx, q, limit, offset)
@@ -139,9 +145,9 @@ func (r *Repository) VerifyPassword(hash, password string) bool {
 
 func (r *Repository) scanOne(row *sql.Row) (*User, error) {
 	var u User
-	var externalID sql.NullString
+	var externalID, avatarURL sql.NullString
 	var lastLogin sql.NullTime
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &avatarURL, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -149,6 +155,7 @@ func (r *Repository) scanOne(row *sql.Row) (*User, error) {
 		return nil, err
 	}
 	u.ExternalID = externalID.String
+	u.AvatarURL = avatarURL.String
 	if lastLogin.Valid {
 		t := lastLogin.Time
 		u.LastLoginAt = &t
@@ -162,13 +169,14 @@ type rowScanner interface {
 
 func scanRow(rows rowScanner) (*User, error) {
 	var u User
-	var externalID sql.NullString
+	var externalID, avatarURL sql.NullString
 	var lastLogin sql.NullTime
-	err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
+	err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &avatarURL, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
 	if err != nil {
 		return nil, err
 	}
 	u.ExternalID = externalID.String
+	u.AvatarURL = avatarURL.String
 	if lastLogin.Valid {
 		t := lastLogin.Time
 		u.LastLoginAt = &t

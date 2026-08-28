@@ -1,0 +1,1 @@
+ALTER TABLE api_clients ADD COLUMN scopes TEXT NOT NULL DEFAULT '[]';

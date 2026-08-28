@@ -6,16 +6,20 @@ import (
 	"os"
 	"time"
 
+	"github.com/raven-clown/idpforge/internal/apiclient"
 	"github.com/raven-clown/idpforge/internal/audit"
 	"github.com/raven-clown/idpforge/internal/auth/oidc"
 	"github.com/raven-clown/idpforge/internal/cache"
 	"github.com/raven-clown/idpforge/internal/captcha"
 	"github.com/raven-clown/idpforge/internal/config"
 	"github.com/raven-clown/idpforge/internal/db"
+	"github.com/raven-clown/idpforge/internal/health"
 	"github.com/raven-clown/idpforge/internal/httpserver"
+	"github.com/raven-clown/idpforge/internal/iot"
 	"github.com/raven-clown/idpforge/internal/mfa"
 	"github.com/raven-clown/idpforge/internal/rbac"
 	"github.com/raven-clown/idpforge/internal/service"
+	"github.com/raven-clown/idpforge/internal/storage"
 	"github.com/raven-clown/idpforge/internal/users"
 	"github.com/raven-clown/idpforge/internal/webauthn"
 )
@@ -68,10 +72,28 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 
 	userRepo := users.NewRepository(database)
 	resolver := rbac.NewResolver(database, c)
+	rbacAdmin := rbac.NewAdmin(database, resolver)
+	iotRepo := iot.NewRepository(database)
+	apiClientRepo := apiclient.NewRepository(database)
+
+	store, err := storage.New(cfg.Storage)
+	if err != nil {
+		return err
+	}
+
+	healthChecker := health.NewChecker()
+	healthChecker.Register("database", func(ctx context.Context) error { return database.PingContext(ctx) })
+	healthChecker.Register("cache", func(ctx context.Context) error {
+		if pinger, ok := c.(interface{ Ping(context.Context) error }); ok {
+			return pinger.Ping(ctx)
+		}
+		return nil
+	})
+	healthChecker.Register("disk_space", health.DiskSpaceCheck(cfg.Paths.DataDir, 100<<20)) // 100MB floor
 
 	auditWriter := audit.NewWriter(database, cfg.Audit.QueueSize, cfg.Audit.BatchSize, cfg.Audit.FlushInterval, logger)
 	auditCtx, auditCancel := context.WithCancel(ctx)
-	go auditWriter.Run(auditCtx)
+	auditWriter.Run(auditCtx)
 
 	keys, err := oidc.LoadOrGenerateKey(cfg.OIDC.SigningKeyPath)
 	if err != nil {
@@ -92,16 +114,21 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	captchaVerifier := captcha.New(cfg.Captcha.Provider, cfg.Captcha.SecretKey)
 
 	srv := httpserver.New(httpserver.Deps{
-		Config:   cfg,
-		Users:    userRepo,
-		RBAC:     resolver,
-		Audit:    auditWriter,
-		OIDC:     provider,
-		WebAuthn: waService,
-		MFA:      mfaService,
-		Captcha:  captchaVerifier,
-		Cache:    c,
-		Logger:   logger,
+		Config:     cfg,
+		Users:      userRepo,
+		RBAC:       resolver,
+		RBACAdm:    rbacAdmin,
+		Audit:      auditWriter,
+		OIDC:       provider,
+		WebAuthn:   waService,
+		MFA:        mfaService,
+		Captcha:    captchaVerifier,
+		Storage:    store,
+		Health:     healthChecker,
+		IoT:        iotRepo,
+		APIClients: apiClientRepo,
+		Cache:      c,
+		Logger:     logger,
 	})
 
 	return service.Run(

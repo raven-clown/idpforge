@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const hcaptchaVerifyURL = "https://hcaptcha.com/siteverify"
+var hcaptchaVerifyURL = "https://hcaptcha.com/siteverify"
 
 type hcaptchaVerifier struct {
 	secretKey string

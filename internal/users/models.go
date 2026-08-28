@@ -18,6 +18,7 @@ type User struct {
 	MFAEnabled  bool       `json:"mfa_enabled"`
 	Source      string     `json:"source"`
 	ExternalID  string     `json:"external_id,omitempty"`
+	AvatarURL   string     `json:"avatar_url,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`

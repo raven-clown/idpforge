@@ -22,15 +22,17 @@ const (
 )
 
 type Config struct {
-	Env     string
-	HTTP    HTTPConfig
-	DB      DBConfig
-	Redis   RedisConfig
-	Audit   AuditConfig
-	Captcha CaptchaConfig
-	OIDC    OIDCConfig
-	Backup  BackupConfig
-	Paths   PathsConfig
+	Env       string
+	HTTP      HTTPConfig
+	DB        DBConfig
+	Redis     RedisConfig
+	Audit     AuditConfig
+	Captcha   CaptchaConfig
+	OIDC      OIDCConfig
+	Backup    BackupConfig
+	Paths     PathsConfig
+	RateLimit RateLimitConfig
+	Storage   StorageConfig
 }
 
 type HTTPConfig struct {
@@ -91,6 +93,32 @@ type PathsConfig struct {
 	LogDir    string
 }
 
+// RateLimitConfig covers per-IP request limiting at the app layer. This is
+// not DDoS protection: volumetric attacks need to be absorbed upstream (a
+// CDN or the cloud provider's network-layer DDoS mitigation) before traffic
+// reaches this process. What this does defend against is credential
+// stuffing and API abuse from individual clients.
+type RateLimitConfig struct {
+	Enabled     bool
+	Max         int
+	Window      time.Duration
+	LoginMax    int
+	LoginWindow time.Duration
+}
+
+// StorageConfig controls where user-uploaded files (profile pictures) land:
+// local disk, or an S3-compatible bucket (MinIO, S3, R2, ...).
+type StorageConfig struct {
+	Backend         string // "local" or "s3"
+	LocalDir        string
+	S3Endpoint      string
+	S3Bucket        string
+	S3AccessKey     string
+	S3SecretKey     string
+	S3UseSSL        bool
+	S3PublicBaseURL string
+}
+
 func Load() (*Config, error) {
 	cfg := &Config{
 		Env: getEnv("IDPFORGE_ENV", "development"),
@@ -139,6 +167,27 @@ func Load() (*Config, error) {
 			DataDir:   getEnv("IDPFORGE_DATA_DIR", defaultDataDir()),
 			LogDir:    getEnv("IDPFORGE_LOG_DIR", defaultLogDir()),
 		},
+		RateLimit: RateLimitConfig{
+			Enabled:     getEnvBool("IDPFORGE_RATELIMIT_ENABLED", true),
+			Max:         getEnvInt("IDPFORGE_RATELIMIT_MAX", 300),
+			Window:      getEnvDuration("IDPFORGE_RATELIMIT_WINDOW", time.Minute),
+			LoginMax:    getEnvInt("IDPFORGE_RATELIMIT_LOGIN_MAX", 10),
+			LoginWindow: getEnvDuration("IDPFORGE_RATELIMIT_LOGIN_WINDOW", time.Minute),
+		},
+		Storage: StorageConfig{
+			Backend:         getEnv("IDPFORGE_STORAGE_BACKEND", "local"),
+			LocalDir:        getEnv("IDPFORGE_STORAGE_LOCAL_DIR", defaultAvatarDir()),
+			S3Endpoint:      getEnv("IDPFORGE_STORAGE_S3_ENDPOINT", ""),
+			S3Bucket:        getEnv("IDPFORGE_STORAGE_S3_BUCKET", "idpforge-avatars"),
+			S3AccessKey:     getEnv("IDPFORGE_STORAGE_S3_ACCESS_KEY", ""),
+			S3SecretKey:     getEnv("IDPFORGE_STORAGE_S3_SECRET_KEY", ""),
+			S3UseSSL:        getEnvBool("IDPFORGE_STORAGE_S3_USE_SSL", true),
+			S3PublicBaseURL: getEnv("IDPFORGE_STORAGE_S3_PUBLIC_BASE_URL", ""),
+		},
+	}
+
+	if cfg.Storage.Backend != "local" && cfg.Storage.Backend != "s3" {
+		return nil, fmt.Errorf("unsupported IDPFORGE_STORAGE_BACKEND %q (want local|s3)", cfg.Storage.Backend)
 	}
 
 	if cfg.DB.DSN == "" {
@@ -196,6 +245,10 @@ func defaultLogDir() string {
 
 func defaultBackupDir() string {
 	return filepath.Join(defaultDataDir(), "backups")
+}
+
+func defaultAvatarDir() string {
+	return filepath.Join(defaultDataDir(), "avatars")
 }
 
 func defaultSigningKeyPath() string {

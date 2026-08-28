@@ -1,0 +1,10 @@
+CREATE TABLE api_clients (
+	id UNIQUEIDENTIFIER PRIMARY KEY,
+	name NVARCHAR(255) NOT NULL UNIQUE,
+	api_key_hash NVARCHAR(255) NOT NULL,
+	allowed_fields NVARCHAR(MAX) NOT NULL DEFAULT '["id","username"]',
+	rate_limit_max INT NOT NULL DEFAULT 60,
+	rate_limit_window_seconds INT NOT NULL DEFAULT 60,
+	enabled BIT NOT NULL DEFAULT 1,
+	created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);

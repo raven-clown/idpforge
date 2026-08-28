@@ -7,7 +7,7 @@ import (
 	"net/url"
 )
 
-const turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+var turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 type turnstileVerifier struct {
 	secretKey string

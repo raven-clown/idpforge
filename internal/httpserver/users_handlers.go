@@ -36,7 +36,7 @@ func (s *Server) handleCreateUser(c *fiber.Ctx) error {
 
 	after, _ := json.Marshal(user)
 	s.audit.Log(audit.Entry{
-		ActorID:        c.Locals("user_id").(string),
+		ActorID:        actorID(c),
 		ActorIP:        c.IP(),
 		ActorUserAgent: c.Get("User-Agent"),
 		Action:         "user.create",
@@ -101,7 +101,7 @@ func (s *Server) handleUpdateUser(c *fiber.Ctx) error {
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(user)
 	s.audit.Log(audit.Entry{
-		ActorID:        c.Locals("user_id").(string),
+		ActorID:        actorID(c),
 		ActorIP:        c.IP(),
 		ActorUserAgent: c.Get("User-Agent"),
 		Action:         "user.update",
@@ -124,7 +124,7 @@ func (s *Server) handleDeleteUser(c *fiber.Ctx) error {
 
 	beforeJSON, _ := json.Marshal(before)
 	s.audit.Log(audit.Entry{
-		ActorID:        c.Locals("user_id").(string),
+		ActorID:        actorID(c),
 		ActorIP:        c.IP(),
 		ActorUserAgent: c.Get("User-Agent"),
 		Action:         "user.delete",
@@ -158,7 +158,7 @@ func (s *Server) handleOffboardUser(c *fiber.Ctx) error {
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(user)
 	s.audit.Log(audit.Entry{
-		ActorID:        c.Locals("user_id").(string),
+		ActorID:        actorID(c),
 		ActorIP:        c.IP(),
 		ActorUserAgent: c.Get("User-Agent"),
 		Action:         "user.offboard",

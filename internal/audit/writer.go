@@ -40,9 +40,8 @@ func NewWriter(database *db.DB, queueSize, batchSize int, flushInterval time.Dur
 	}
 }
 
-// Log enqueues an entry without blocking on the DB. If the queue is full the
-// entry is dropped and logged loudly, rather than blocking the caller's
-// request — audit logging must never become an outage vector.
+// Log enqueues an entry without blocking on the DB. A full queue drops and
+// logs the entry instead of blocking the caller.
 func (w *Writer) Log(e Entry) {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
@@ -54,9 +53,15 @@ func (w *Writer) Log(e Entry) {
 	}
 }
 
-// Run drains the queue until ctx is cancelled, then flushes whatever remains.
+// Run starts the background loop and returns immediately. wg.Add(1) runs
+// here, not inside the goroutine, so Stop's wg.Wait() can't return before
+// the goroutine has actually started.
 func (w *Writer) Run(ctx context.Context) {
 	w.wg.Add(1)
+	go w.run(ctx)
+}
+
+func (w *Writer) run(ctx context.Context) {
 	defer w.wg.Done()
 
 	ticker := time.NewTicker(w.flushInterval)
@@ -73,12 +78,29 @@ func (w *Writer) Run(ctx context.Context) {
 		batch = batch[:0]
 	}
 
+	// drain pulls any entries already sent to the channel but not yet
+	// received. Without this, a Log() immediately followed by Stop() can
+	// race: select may pick the (always-ready) stop/ctx.Done case before
+	// ever receiving from w.queue, silently losing that entry.
+	drain := func() {
+		for {
+			select {
+			case e := <-w.queue:
+				batch = append(batch, e)
+			default:
+				return
+			}
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			drain()
 			flush()
 			return
 		case <-w.stop:
+			drain()
 			flush()
 			return
 		case e := <-w.queue:

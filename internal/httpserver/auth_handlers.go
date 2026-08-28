@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/raven-clown/idpforge/internal/audit"
+	"github.com/raven-clown/idpforge/internal/metrics"
 )
 
 type loginRequest struct {
@@ -28,11 +29,11 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 
 	hash, err := s.users.PasswordHash(c.Context(), req.Username)
 	if err != nil {
-		s.logFailedLogin(c, req.Username, "user not found")
+		s.logFailedLogin(c, req.Username, "not_found")
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 	if hash == "" || !s.users.VerifyPassword(hash, req.Password) {
-		s.logFailedLogin(c, req.Username, "bad password")
+		s.logFailedLogin(c, req.Username, "bad_password")
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 
@@ -44,10 +45,12 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 	if user.MFAEnabled {
 		valid, err := s.mfa.Verify(c.Context(), user.ID, req.MFACode)
 		if err != nil || !valid {
-			s.logFailedLogin(c, req.Username, "mfa failed")
+			s.logFailedLogin(c, req.Username, "mfa_failed")
 			return fiber.NewError(fiber.StatusUnauthorized, "invalid MFA code")
 		}
 	}
+
+	metrics.LoginAttemptsTotal.WithLabelValues("success").Inc()
 
 	sessionID, err := s.sessions.create(c.Context(), user.ID)
 	if err != nil {

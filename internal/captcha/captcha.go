@@ -18,6 +18,8 @@ func New(provider, secretKey string) Verifier {
 		return &turnstileVerifier{secretKey: secretKey}
 	case "hcaptcha":
 		return &hcaptchaVerifier{secretKey: secretKey}
+	case "recaptcha":
+		return &recaptchaVerifier{secretKey: secretKey}
 	default:
 		return noopVerifier{}
 	}

@@ -17,6 +17,13 @@ container.
 - WebAuthn/FIDO2 (security keys, Windows Hello, Touch ID, fingerprint
   readers) and TOTP for MFA
 - Forward-auth endpoint for legacy apps with no SSO support (Traefik)
+- IoT/hardware check-in API for badge, face, and fingerprint readers
+  (matching happens on the device, this server only sees a credential
+  reference), with its own event history separate from the audit log
+- Scoped API client tokens (`api-clients`), a GitHub-PAT-style credential:
+  grant one exactly the `resource:action` scopes it needs and it can call
+  the real admin API, or just a field-filtered read/login check via
+  `/external/v1` with no scopes at all
 - Pluggable SQL backend: Postgres (incl. Supabase and other managed
   Postgres), MySQL/MariaDB, MSSQL, or SQLite for single-node setups
 - Cloudflare Turnstile / hCaptcha on login

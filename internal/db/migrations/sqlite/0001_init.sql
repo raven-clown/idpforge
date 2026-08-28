@@ -9,22 +9,22 @@ CREATE TABLE users (
 	webauthn_credentials TEXT NOT NULL DEFAULT '[]',
 	source TEXT NOT NULL DEFAULT 'local',
 	external_id TEXT,
-	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-	updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-	last_login_at TEXT
+	created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	last_login_at DATETIME
 );
 
 CREATE TABLE groups (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL UNIQUE,
 	parent_group_id TEXT REFERENCES groups(id) ON DELETE SET NULL,
-	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+	created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE TABLE user_groups (
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-	added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	added_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 	PRIMARY KEY (user_id, group_id)
 );
 
@@ -32,7 +32,7 @@ CREATE TABLE roles (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL UNIQUE,
 	description TEXT,
-	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+	created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE TABLE permissions (
@@ -66,8 +66,8 @@ CREATE TABLE applications (
 	protocol TEXT NOT NULL,
 	config TEXT NOT NULL DEFAULT '{}',
 	enabled INTEGER NOT NULL DEFAULT 1,
-	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-	updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+	created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX idx_user_groups_group_id ON user_groups(group_id);
@@ -89,7 +89,7 @@ CREATE TABLE audit_logs (
 	after_state TEXT,
 	status TEXT NOT NULL,
 	trace_id TEXT,
-	timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+	timestamp DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX idx_audit_logs_timestamp ON audit_logs (timestamp);

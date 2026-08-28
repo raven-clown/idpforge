@@ -1,0 +1,1 @@
+ALTER TABLE api_clients ADD scopes NVARCHAR(MAX) NOT NULL DEFAULT '[]';

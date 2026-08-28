@@ -1,10 +1,24 @@
 package rbac
 
+import "strings"
+
 // Permission is a single (resource, action) grant, e.g. ("nifi", "admin") or
-// ("grafana", "viewer").
+// ("grafana", "viewer"). Resource supports a trailing "/*" wildcard
+// ("reports/*") so one grant covers a whole category/folder of resources
+// instead of naming each one, and a bare "*" grants every resource.
 type Permission struct {
 	Resource string `json:"resource"`
 	Action   string `json:"action"`
+}
+
+func (p Permission) matches(resource string) bool {
+	if p.Resource == resource || p.Resource == "*" {
+		return true
+	}
+	if prefix, ok := strings.CutSuffix(p.Resource, "/*"); ok {
+		return resource == prefix || strings.HasPrefix(resource, prefix+"/")
+	}
+	return false
 }
 
 func (p Permission) String() string {
@@ -23,7 +37,7 @@ type Resolved struct {
 
 func (r Resolved) Has(resource, action string) bool {
 	for _, p := range r.Permissions {
-		if p.Resource == resource && p.Action == action {
+		if p.Action == action && p.matches(resource) {
 			return true
 		}
 	}

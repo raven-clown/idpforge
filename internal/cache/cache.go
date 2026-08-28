@@ -15,5 +15,9 @@ type Cache interface {
 	// DeletePrefix removes every key starting with prefix; used to
 	// invalidate all cached RBAC resolutions for a user/group/role at once.
 	DeletePrefix(ctx context.Context, prefix string) error
+	// Increment atomically increments key (creating it at 1 if absent),
+	// sets ttl only on creation, and returns the new value. Used for
+	// counter-based rate limiting.
+	Increment(ctx context.Context, key string, ttl time.Duration) (int64, error)
 	Close() error
 }

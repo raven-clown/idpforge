@@ -7,7 +7,19 @@ import (
 )
 
 func (s *Server) handleHealth(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"status": "ok"})
+	results, ok := s.health.Run(c.Context())
+	status := fiber.StatusOK
+	if !ok {
+		status = fiber.StatusServiceUnavailable
+	}
+	return c.Status(status).JSON(fiber.Map{"status": statusLabel(ok), "checks": results})
+}
+
+func statusLabel(ok bool) string {
+	if ok {
+		return "ok"
+	}
+	return "degraded"
 }
 
 func (s *Server) handleMetrics(c *fiber.Ctx) error {

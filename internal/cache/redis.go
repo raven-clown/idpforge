@@ -68,6 +68,17 @@ func (r *RedisCache) DeletePrefix(ctx context.Context, prefix string) error {
 	return nil
 }
 
+func (r *RedisCache) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	n, err := r.client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if n == 1 && ttl > 0 {
+		r.client.Expire(ctx, key, ttl)
+	}
+	return n, nil
+}
+
 func (r *RedisCache) Close() error {
 	return r.client.Close()
 }

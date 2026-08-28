@@ -18,6 +18,7 @@ type MemoryCache struct {
 type memoryEntry struct {
 	value   string
 	expires time.Time
+	counter int64
 }
 
 func NewMemory() *MemoryCache {
@@ -83,6 +84,23 @@ func (c *MemoryCache) DeletePrefix(_ context.Context, prefix string) error {
 		}
 	}
 	return nil
+}
+
+func (c *MemoryCache) Increment(_ context.Context, key string, ttl time.Duration) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	e, ok := c.data[key]
+	if !ok || (!e.expires.IsZero() && time.Now().After(e.expires)) {
+		var expires time.Time
+		if ttl > 0 {
+			expires = time.Now().Add(ttl)
+		}
+		e = memoryEntry{expires: expires, counter: 0}
+	}
+	e.counter++
+	c.data[key] = e
+	return e.counter, nil
 }
 
 func (c *MemoryCache) Close() error { return nil }

@@ -1,11 +1,15 @@
 # IdpForge
 
-Self-hosted SSO / identity platform written in Go. Single static binary,
-no cgo, runs the same way on Linux and Windows as a native service or a
-container.
+Self-hosted SSO / identity platform written in Go, with a Next.js admin
+console built as a static export and embedded into the binary via
+`go:embed`. Ships as one static executable, no cgo, no Node.js at runtime;
+runs the same way on Linux and Windows as a native service or a container.
 
 ## Features
 
+- Admin console (`/`, dark/light theme, responsive) for users, roles,
+  permissions, groups, API clients, and IoT devices, backed entirely by
+  the same JSON API documented below, not a separate code path
 - Centralized users, groups (with hierarchy), roles, and permissions
 - Permission resolution (`user -> group(s) -> role(s) -> permission(s)`)
   cached in Redis (in-memory fallback for single-node setups), invalidated
@@ -41,6 +45,21 @@ docker compose up --build
 This starts Postgres, Redis, and the server on `http://localhost:8080`.
 
 ## Building from source
+
+The admin console (`web/`, Next.js) is built separately and copied into
+`internal/webui/dist/`, where `go:embed` picks it up; `make build` and
+`build.ps1` do this automatically. A minimal placeholder is committed
+there so a bare `go build` still produces a working binary if you skip
+the web build, just without the real admin UI.
+
+```bash
+make build             # builds web/ then the Go binary for your platform
+```
+
+`build.ps1` always builds `web/` first, then cross-compiles every release
+target (see below).
+
+To build the Go binary only, without touching `web/`:
 
 ```bash
 go build -o dist/idpforge-server ./cmd/server

@@ -17,6 +17,18 @@ $Binary = "idpforge-server"
 $Dist = "dist"
 $Ldflags = "-s -w -X main.version=$Version"
 
+Write-Host "Building admin UI (Next.js static export)"
+Push-Location web
+npm ci
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm ci failed" }
+npm run build
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm run build failed" }
+Pop-Location
+
+if (Test-Path internal/webui/dist) { Remove-Item -Recurse -Force internal/webui/dist }
+New-Item -ItemType Directory -Force -Path internal/webui/dist | Out-Null
+Copy-Item -Recurse -Force web/out/* internal/webui/dist/
+
 $Platforms = @(
     @{ OS = "linux";   Arch = "amd64" },
     @{ OS = "linux";   Arch = "arm64" },

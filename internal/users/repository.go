@@ -65,6 +65,33 @@ func (r *Repository) SetAvatar(ctx context.Context, id, avatarURL string) error 
 	return err
 }
 
+// SetPassword updates the password hash and resets password_changed_at,
+// clearing any pending expiry.
+func (r *Repository) SetPassword(ctx context.Context, id, newPassword string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	q := fmt.Sprintf(`UPDATE users SET password_hash = %s, password_changed_at = %s WHERE id = %s`,
+		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3))
+	_, err = r.db.ExecContext(ctx, q, string(hash), time.Now().UTC(), id)
+	return err
+}
+
+// PasswordAge returns how long it has been since this user's password was
+// last set.
+func (r *Repository) PasswordAge(ctx context.Context, id string) (time.Duration, error) {
+	var changedAt time.Time
+	q := fmt.Sprintf(`SELECT password_changed_at FROM users WHERE id = %s`, r.db.Placeholder(1))
+	if err := r.db.QueryRowContext(ctx, q, id).Scan(&changedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	return time.Since(changedAt), nil
+}
+
 // PasswordHash returns the bcrypt hash for the given username; used only by
 // the local-password login path (LDAP/OIDC/SAML-sourced users have none).
 func (r *Repository) PasswordHash(ctx context.Context, username string) (string, error) {

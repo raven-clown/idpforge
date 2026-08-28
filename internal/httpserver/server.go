@@ -1,6 +1,6 @@
 // Package httpserver wires the HTTP API: session-based login/MFA/WebAuthn,
-// user management CRUD, the OIDC provider endpoints, forward-auth, and
-// health/metrics.
+// user management CRUD, the OIDC provider endpoints, forward-auth,
+// health/metrics, and the embedded admin SPA.
 package httpserver
 
 import (

@@ -37,6 +37,8 @@ func (s *Server) registerRoutes() {
 	// something a scoped API client token acts on for someone else.
 	self := api.Group("/", requireUserActor)
 	self.Post("/users/:id/avatar", s.handleUploadAvatar)
+	self.Get("/me", s.handleMe)
+	self.Post("/change-password", s.handleChangePassword)
 
 	wa := self.Group("/webauthn")
 	wa.Post("/register/begin", s.handleWebAuthnRegisterBegin)
@@ -52,6 +54,8 @@ func (s *Server) registerRoutes() {
 	rbacGroup := api.Group("/rbac", s.requirePermission("rbac", "manage"))
 	rbacGroup.Post("/roles", s.handleCreateRole)
 	rbacGroup.Get("/roles", s.handleListRoles)
+	rbacGroup.Get("/roles/:id", s.handleGetRole)
+	rbacGroup.Get("/roles/:id/permissions", s.handleListRolePermissions)
 	rbacGroup.Delete("/roles/:id", s.handleDeleteRole)
 	rbacGroup.Post("/roles/:id/permissions", s.handleGrantPermissionToRole)
 	rbacGroup.Delete("/roles/:id/permissions/:permission_id", s.handleRevokePermissionFromRole)
@@ -63,6 +67,7 @@ func (s *Server) registerRoutes() {
 	rbacGroup.Delete("/groups/:id/roles/:role_id", s.handleRemoveRoleFromGroup)
 	rbacGroup.Post("/groups/:id/users/:user_id", s.handleAddUserToGroup)
 	rbacGroup.Delete("/groups/:id/users/:user_id", s.handleRemoveUserFromGroup)
+	rbacGroup.Get("/users/:id/roles", s.handleListUserRoles)
 	rbacGroup.Post("/users/:id/roles", s.handleAssignRoleToUser)
 	rbacGroup.Delete("/users/:id/roles/:role_id", s.handleRemoveRoleFromUser)
 
@@ -94,4 +99,8 @@ func (s *Server) registerRoutes() {
 
 	fa := s.app.Group("/forwardauth")
 	fa.Get("/", s.handleForwardAuth)
+
+	if err := s.registerSPA(); err != nil {
+		panic("failed to mount admin SPA: " + err.Error())
+	}
 }

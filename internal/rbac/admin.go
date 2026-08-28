@@ -110,6 +110,72 @@ func (a *Admin) ListPermissions(ctx context.Context) ([]PermissionRecord, error)
 	return out, rows.Err()
 }
 
+// ListRolePermissions returns the permissions currently granted to a role.
+func (a *Admin) ListRolePermissions(ctx context.Context, roleID string) ([]PermissionRecord, error) {
+	q := `SELECT p.id, p.resource, p.action
+FROM permissions p
+JOIN role_permissions rp ON rp.permission_id = p.id
+WHERE rp.role_id = ` + a.db.Placeholder(1)
+
+	rows, err := a.db.QueryContext(ctx, q, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []PermissionRecord
+	for rows.Next() {
+		var p PermissionRecord
+		if err := rows.Scan(&p.ID, &p.Resource, &p.Action); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetRole fetches a single role by ID.
+func (a *Admin) GetRole(ctx context.Context, id string) (*Role, error) {
+	var r Role
+	var desc sql.NullString
+	q := `SELECT id, name, description FROM roles WHERE id = ` + a.db.Placeholder(1)
+	if err := a.db.QueryRowContext(ctx, q, id).Scan(&r.ID, &r.Name, &desc); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	r.Description = desc.String
+	return &r, nil
+}
+
+// ListUserRoles returns the roles directly assigned to a user (the
+// user_roles override path, independent of group membership).
+func (a *Admin) ListUserRoles(ctx context.Context, userID string) ([]Role, error) {
+	q := `SELECT r.id, r.name, r.description
+FROM roles r
+JOIN user_roles ur ON ur.role_id = r.id
+WHERE ur.user_id = ` + a.db.Placeholder(1)
+
+	rows, err := a.db.QueryContext(ctx, q, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Role
+	for rows.Next() {
+		var r Role
+		var desc sql.NullString
+		if err := rows.Scan(&r.ID, &r.Name, &desc); err != nil {
+			return nil, err
+		}
+		r.Description = desc.String
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // GrantPermissionToRole and the assignment methods below invalidate every
 // cached resolution rather than a single user, since a role/group change
 // can affect many users at once.

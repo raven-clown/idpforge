@@ -2,12 +2,26 @@ package httpserver
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/raven-clown/idpforge/internal/audit"
 	"github.com/raven-clown/idpforge/internal/metrics"
 )
+
+// passwordExpired reports whether userID's password is older than the
+// configured expiry policy; always false when the policy is disabled (0).
+func (s *Server) passwordExpired(c *fiber.Ctx, userID string) bool {
+	if s.cfg.PasswordExpiryDays <= 0 {
+		return false
+	}
+	age, err := s.users.PasswordAge(c.Context(), userID)
+	if err != nil {
+		return false
+	}
+	return age > time.Duration(s.cfg.PasswordExpiryDays)*24*time.Hour
+}
 
 type loginRequest struct {
 	Username     string `json:"username"`
@@ -52,7 +66,8 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 
 	metrics.LoginAttemptsTotal.WithLabelValues("success").Inc()
 
-	sessionID, err := s.sessions.create(c.Context(), user.ID)
+	expired := s.passwordExpired(c, user.ID)
+	sessionID, err := s.sessions.create(c.Context(), user.ID, expired)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not create session")
 	}
@@ -75,7 +90,7 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 		Status:         "success",
 	})
 
-	return c.JSON(fiber.Map{"user_id": user.ID, "mfa_required": user.MFAEnabled})
+	return c.JSON(fiber.Map{"user_id": user.ID, "mfa_required": user.MFAEnabled, "password_change_required": expired})
 }
 
 func (s *Server) logFailedLogin(c *fiber.Ctx, username, reason string) {

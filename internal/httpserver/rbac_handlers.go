@@ -27,6 +27,22 @@ func (s *Server) handleListRoles(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"roles": roles})
 }
 
+func (s *Server) handleGetRole(c *fiber.Ctx) error {
+	role, err := s.rbacAdm.GetRole(c.Context(), c.Params("id"))
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "role not found")
+	}
+	return c.JSON(role)
+}
+
+func (s *Server) handleListRolePermissions(c *fiber.Ctx) error {
+	perms, err := s.rbacAdm.ListRolePermissions(c.Context(), c.Params("id"))
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not list role permissions")
+	}
+	return c.JSON(fiber.Map{"permissions": perms})
+}
+
 func (s *Server) handleDeleteRole(c *fiber.Ctx) error {
 	if err := s.rbacAdm.DeleteRole(c.Context(), c.Params("id")); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not delete role")
@@ -79,6 +95,14 @@ func (s *Server) handleRevokePermissionFromRole(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not revoke permission")
 	}
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (s *Server) handleListUserRoles(c *fiber.Ctx) error {
+	roles, err := s.rbacAdm.ListUserRoles(c.Context(), c.Params("id"))
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "could not list user roles")
+	}
+	return c.JSON(fiber.Map{"roles": roles})
 }
 
 type roleRefRequest struct {

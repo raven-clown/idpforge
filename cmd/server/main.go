@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/raven-clown/idpforge/internal/apiclient"
 	"github.com/raven-clown/idpforge/internal/audit"
 	"github.com/raven-clown/idpforge/internal/auth/oidc"
+	"github.com/raven-clown/idpforge/internal/bootstrap"
 	"github.com/raven-clown/idpforge/internal/cache"
 	"github.com/raven-clown/idpforge/internal/captcha"
 	"github.com/raven-clown/idpforge/internal/config"
@@ -75,6 +77,10 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	rbacAdmin := rbac.NewAdmin(database, resolver)
 	iotRepo := iot.NewRepository(database)
 	apiClientRepo := apiclient.NewRepository(database)
+
+	if err := bootstrap.Run(ctx, database, userRepo, rbacAdmin, cfg.Bootstrap, logger); err != nil {
+		return fmt.Errorf("bootstrap: %w", err)
+	}
 
 	store, err := storage.New(cfg.Storage)
 	if err != nil {

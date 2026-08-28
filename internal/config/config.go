@@ -33,6 +33,21 @@ type Config struct {
 	Paths     PathsConfig
 	RateLimit RateLimitConfig
 	Storage   StorageConfig
+	Bootstrap BootstrapConfig
+	// PasswordExpiryDays forces a password change after this many days
+	// since it was last set; 0 disables the policy. Applies to idpforge's
+	// own SSO login only, not OS-level (Windows/Mac) accounts, which are a
+	// separate identity source unless federated via LDAP/AD.
+	PasswordExpiryDays int
+}
+
+// BootstrapConfig creates the first admin account on a fresh install (empty
+// users table), since every user-creation API route requires an existing
+// session. Leave the password unset to have one generated and logged once.
+type BootstrapConfig struct {
+	AdminUsername string
+	AdminEmail    string
+	AdminPassword string
 }
 
 type HTTPConfig struct {
@@ -184,6 +199,12 @@ func Load() (*Config, error) {
 			S3UseSSL:        getEnvBool("IDPFORGE_STORAGE_S3_USE_SSL", true),
 			S3PublicBaseURL: getEnv("IDPFORGE_STORAGE_S3_PUBLIC_BASE_URL", ""),
 		},
+		Bootstrap: BootstrapConfig{
+			AdminUsername: getEnv("IDPFORGE_BOOTSTRAP_ADMIN_USERNAME", "admin"),
+			AdminEmail:    getEnv("IDPFORGE_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost"),
+			AdminPassword: getEnv("IDPFORGE_BOOTSTRAP_ADMIN_PASSWORD", ""),
+		},
+		PasswordExpiryDays: getEnvInt("IDPFORGE_PASSWORD_EXPIRY_DAYS", 0),
 	}
 
 	if cfg.Storage.Backend != "local" && cfg.Storage.Backend != "s3" {

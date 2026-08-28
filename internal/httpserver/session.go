@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-
 	"github.com/raven-clown/idpforge/internal/cache"
 )
 
@@ -16,7 +14,8 @@ const sessionCookie = "idpforge_session"
 const sessionTTL = 8 * time.Hour
 
 type sessionData struct {
-	UserID string `json:"user_id"`
+	UserID             string `json:"user_id"`
+	MustChangePassword bool   `json:"must_change_password,omitempty"`
 }
 
 type sessionStore struct {
@@ -27,12 +26,12 @@ func newSessionStore(c cache.Cache) *sessionStore {
 	return &sessionStore{cache: c}
 }
 
-func (s *sessionStore) create(ctx context.Context, userID string) (string, error) {
+func (s *sessionStore) create(ctx context.Context, userID string, mustChangePassword bool) (string, error) {
 	id, err := randomID()
 	if err != nil {
 		return "", err
 	}
-	encoded, err := json.Marshal(sessionData{UserID: userID})
+	encoded, err := json.Marshal(sessionData{UserID: userID, MustChangePassword: mustChangePassword})
 	if err != nil {
 		return "", err
 	}
@@ -43,15 +42,33 @@ func (s *sessionStore) create(ctx context.Context, userID string) (string, error
 }
 
 func (s *sessionStore) get(ctx context.Context, id string) (string, bool, error) {
-	raw, ok, err := s.cache.Get(ctx, "session:"+id)
+	data, ok, err := s.getFull(ctx, id)
 	if err != nil || !ok {
 		return "", false, err
 	}
+	return data.UserID, true, nil
+}
+
+func (s *sessionStore) getFull(ctx context.Context, id string) (sessionData, bool, error) {
+	raw, ok, err := s.cache.Get(ctx, "session:"+id)
+	if err != nil || !ok {
+		return sessionData{}, false, err
+	}
 	var data sessionData
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
-		return "", false, err
+		return sessionData{}, false, err
 	}
-	return data.UserID, true, nil
+	return data, true, nil
+}
+
+// clearMustChangePassword flips the flag off for an existing session, after
+// a successful password change, without forcing a fresh login.
+func (s *sessionStore) clearMustChangePassword(ctx context.Context, id, userID string) error {
+	encoded, err := json.Marshal(sessionData{UserID: userID, MustChangePassword: false})
+	if err != nil {
+		return err
+	}
+	return s.cache.Set(ctx, "session:"+id, string(encoded), sessionTTL)
 }
 
 func (s *sessionStore) destroy(ctx context.Context, id string) error {
@@ -64,24 +81,4 @@ func randomID() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-// requireSession is Fiber middleware that resolves the session cookie into
-// a user ID stored on c.Locals("user_id"), or returns 401.
-func requireSession(store *sessionStore) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		id := c.Cookies(sessionCookie)
-		if id == "" {
-			return fiber.NewError(fiber.StatusUnauthorized, "not authenticated")
-		}
-		userID, ok, err := store.get(c.Context(), id)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "session lookup failed")
-		}
-		if !ok {
-			return fiber.NewError(fiber.StatusUnauthorized, "session expired")
-		}
-		c.Locals("user_id", userID)
-		return c.Next()
-	}
 }

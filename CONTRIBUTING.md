@@ -26,6 +26,33 @@ Participation means agreeing to abide by it.
   time into an implementation. Typos, docs fixes, and genuinely small
   changes can just go straight to a PR.
 
+## Branching
+
+This project uses [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow),
+not GitFlow. There's one long-lived branch, `main`, always deployable
+and protected (CI has to pass before anything merges into it). No
+`develop` branch, no long-lived release branches, that's ceremony this
+project doesn't need at its current size.
+
+To contribute:
+
+1. Fork the repo (or branch directly if you have write access).
+2. Branch off `main`, named for what it does:
+   `feat/oidc-client-crud`, `fix/webauthn-nil-panic`,
+   `docs/clarify-redis-setup`, `chore/bump-deps`. The prefix isn't
+   enforced by tooling, it's just so PR titles and branch lists stay
+   scannable.
+3. Keep the branch short-lived. Rebase on `main` before opening the PR
+   if it's drifted.
+4. Open a PR against `main`. Once CI is green and it's merged, the
+   branch is auto-deleted (repo setting, not something you need to
+   clean up yourself).
+
+PRs merge via squash, so the commits on your branch can be messy while
+you work, only the final PR title/description end up in `main`'s
+history. Write that description like it's the commit message, because
+it is.
+
 ## Local setup
 
 Requires Go 1.26+ and Node 20+.

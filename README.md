@@ -193,13 +193,19 @@ has its own built-in usage graphs (`/usage`) that don't need either.
 
 ## Contributing
 
-Issues and PRs welcome. The codebase is organized as one Go package per
-concern under `internal/` (`users`, `rbac`, `audit`, `apiclient`, `iot`,
-`auth/oidc`, `webauthn`, `mfa`, ...) each with its own repository struct
-and, increasingly, its own test file -- `internal/httpserver` (the HTTP
-layer) has real integration test coverage now, add to it rather than
-testing by hand. See [CHANGELOG.md](CHANGELOG.md) for what's shipped,
-including a "Known limitations" note on what's not built yet.
+Issues and PRs welcome, including from first-time contributors. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for local setup, code conventions,
+and what to check before opening a PR.
+
+Not sure where to start? Browse the
+[`good first issue`](https://github.com/raven-clown/idpforge/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
+label for small, well-scoped tasks, or
+[`help wanted`](https://github.com/raven-clown/idpforge/issues?q=is%3Aopen+label%3A%22help+wanted%22)
+for bigger ones. Both are seeded from the project's own honest gap list,
+see [CHANGELOG.md](CHANGELOG.md)'s "Known limitations" section for the
+full picture of what's shipped and what isn't yet.
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## License
 

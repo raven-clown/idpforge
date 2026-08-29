@@ -160,13 +160,20 @@ scripts/add-app.ps1      # Windows
 
 ## Docker images
 
+Published to both Docker Hub and GitHub Container Registry on every
+`vX.Y.Z` tag:
+
 ```
 docker.io/<namespace>/idpforge:<version>
 docker.io/<namespace>/idpforge:latest
+
+ghcr.io/raven-clown/idpforge:<version>
+ghcr.io/raven-clown/idpforge:latest
 ```
 
-Multi-arch (`linux/amd64`, `linux/arm64`) built and pushed by
-`.github/workflows/release.yml` on every `vX.Y.Z` tag.
+Multi-arch (`linux/amd64`, `linux/arm64`), built and pushed by
+`.github/workflows/release.yml`. The GHCR push needs no extra secrets --
+just the token GitHub Actions already provides for the repo.
 
 ## Integration matrix
 

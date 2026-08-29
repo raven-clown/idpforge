@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -9,6 +10,39 @@ import (
 	"github.com/raven-clown/idpforge/internal/audit"
 	"github.com/raven-clown/idpforge/internal/metrics"
 )
+
+const (
+	loginFailCachePrefix = "login_fail:"
+	loginLockCachePrefix = "login_lock:"
+)
+
+// accountLocked reports whether username is currently locked out from
+// login attempts, independent of and in addition to the per-IP rate
+// limit: that alone does nothing against an attacker spreading attempts
+// across many source IPs at one specific account.
+func (s *Server) accountLocked(ctx context.Context, username string) bool {
+	_, locked, _ := s.cache.Get(ctx, loginLockCachePrefix+username)
+	return locked
+}
+
+// recordLoginFailure counts a failed attempt against username within the
+// configured window, locking the account out once MaxAttempts is reached.
+// Disabled entirely when MaxAttempts <= 0.
+func (s *Server) recordLoginFailure(ctx context.Context, username string) {
+	cfg := s.cfg.AccountLockout
+	if cfg.MaxAttempts <= 0 {
+		return
+	}
+	n, err := s.cache.Increment(ctx, loginFailCachePrefix+username, cfg.Window)
+	if err != nil || n < int64(cfg.MaxAttempts) {
+		return
+	}
+	_ = s.cache.Set(ctx, loginLockCachePrefix+username, "1", cfg.Duration)
+}
+
+func (s *Server) clearLoginFailures(ctx context.Context, username string) {
+	_ = s.cache.Delete(ctx, loginFailCachePrefix+username, loginLockCachePrefix+username)
+}
 
 // passwordExpired reports whether userID's password is older than the
 // configured expiry policy; always false when the policy is disabled (0).
@@ -21,6 +55,13 @@ func (s *Server) passwordExpired(c *fiber.Ctx, userID string) bool {
 		return false
 	}
 	return age > time.Duration(s.cfg.PasswordExpiryDays)*24*time.Hour
+}
+
+// passwordChangeRequired covers both ways a login can require a change: the
+// age-based expiry policy, and the persistent force_password_change flag
+// set whenever an account was created or reset to the default password.
+func (s *Server) passwordChangeRequired(c *fiber.Ctx, userID string, forced bool) bool {
+	return forced || s.passwordExpired(c, userID)
 }
 
 type loginRequest struct {
@@ -36,6 +77,11 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
 
+	if s.accountLocked(c.Context(), req.Username) {
+		s.logFailedLogin(c, req.Username, "locked")
+		return fiber.NewError(fiber.StatusTooManyRequests, "too many failed attempts, try again later")
+	}
+
 	ok, err := s.captcha.Verify(c.Context(), req.CaptchaToken, c.IP())
 	if err != nil || !ok {
 		return fiber.NewError(fiber.StatusForbidden, "captcha verification failed")
@@ -44,10 +90,12 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 	hash, err := s.users.PasswordHash(c.Context(), req.Username)
 	if err != nil {
 		s.logFailedLogin(c, req.Username, "not_found")
+		s.recordLoginFailure(c.Context(), req.Username)
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 	if hash == "" || !s.users.VerifyPassword(hash, req.Password) {
 		s.logFailedLogin(c, req.Username, "bad_password")
+		s.recordLoginFailure(c.Context(), req.Username)
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 
@@ -60,14 +108,16 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 		valid, err := s.mfa.Verify(c.Context(), user.ID, req.MFACode)
 		if err != nil || !valid {
 			s.logFailedLogin(c, req.Username, "mfa_failed")
+			s.recordLoginFailure(c.Context(), req.Username)
 			return fiber.NewError(fiber.StatusUnauthorized, "invalid MFA code")
 		}
 	}
 
+	s.clearLoginFailures(c.Context(), req.Username)
 	metrics.RecordLoginAttempt("success")
 
-	expired := s.passwordExpired(c, user.ID)
-	sessionID, err := s.sessions.create(c.Context(), user.ID, expired)
+	changeRequired := s.passwordChangeRequired(c, user.ID, user.ForcePasswordChange)
+	sessionID, err := s.sessions.create(c.Context(), user.ID, changeRequired)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "could not create session")
 	}
@@ -90,7 +140,7 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 		Status:         "success",
 	})
 
-	return c.JSON(fiber.Map{"user_id": user.ID, "mfa_required": user.MFAEnabled, "password_change_required": expired})
+	return c.JSON(fiber.Map{"user_id": user.ID, "mfa_required": user.MFAEnabled, "password_change_required": changeRequired})
 }
 
 func (s *Server) logFailedLogin(c *fiber.Ctx, username, reason string) {

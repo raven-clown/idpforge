@@ -3,37 +3,83 @@
 Self-hosted SSO / identity platform written in Go, with a Next.js admin
 console built as a static export and embedded into the binary via
 `go:embed`. Ships as one static executable, no cgo, no Node.js at runtime;
-runs the same way on Linux and Windows as a native service or a container.
+runs the same way on Linux and Windows as a native service or a container,
+and scales from a single SQLite file to a multi-instance cluster behind
+Postgres/MySQL/MSSQL and Redis without changing anything but config.
 
-## Features
+> Screenshots aren't checked in yet -- drop your own into
+> `docs/screenshots/` and link them here. The walkthrough below describes
+> exactly what you'll see.
 
-- Admin console (`/`, dark/light theme, responsive) for users, roles,
-  permissions, groups, API clients, and IoT devices, backed entirely by
-  the same JSON API documented below, not a separate code path
-- Centralized users, groups (with hierarchy), roles, and permissions
-- Permission resolution (`user -> group(s) -> role(s) -> permission(s)`)
-  cached in Redis (in-memory fallback for single-node setups), invalidated
-  on every write
-- Async, batched append-only audit log
-- OIDC provider (authorization code + PKCE, refresh tokens, JWKS,
-  discovery) so apps like GitLab, Harbor, Rancher, Grafana, Jenkins,
-  Vault, NiFi, and MinIO can point their native OIDC config at IdpForge
-- WebAuthn/FIDO2 (security keys, Windows Hello, Touch ID, fingerprint
-  readers) and TOTP for MFA
-- Forward-auth endpoint for legacy apps with no SSO support (Traefik)
-- IoT/hardware check-in API for badge, face, and fingerprint readers
-  (matching happens on the device, this server only sees a credential
-  reference), with its own event history separate from the audit log
-- Scoped API client tokens (`api-clients`), a GitHub-PAT-style credential:
-  grant one exactly the `resource:action` scopes it needs and it can call
-  the real admin API, or just a field-filtered read/login check via
-  `/external/v1` with no scopes at all
-- Pluggable SQL backend: Postgres (incl. Supabase and other managed
-  Postgres), MySQL/MariaDB, MSSQL, or SQLite for single-node setups
-- Cloudflare Turnstile / hCaptcha on login
-- Prometheus metrics, health check
-- Runs as a systemd service on Linux and a native Windows Service (no
-  NSSM) on Windows
+## What it looks like
+
+Sign in and land on a topbar-driven console (icon nav with an active-tab
+indicator, live search, a notification bell, light/dark theme) -- not a
+sidebar-and-whitespace admin scaffold. Every section below is real, backed
+by the same JSON API a script or another app would call:
+
+- **Dashboard** -- at-a-glance counts (users, roles, API clients, IoT
+  devices).
+- **Users** -- create, offboard, delete; assign roles; enroll device
+  credentials (card/face/fingerprint reference, never raw biometric data);
+  reset a password back to the shared default. Every list an admin might
+  need to scroll through hundreds of rows in (users, audit log, IoT
+  events) is paginated.
+- **Roles & permissions** -- roles, permissions, groups (with hierarchy),
+  and the grant/revoke UI between them.
+- **API clients** -- scoped tokens (GitHub-PAT style): pick scopes from a
+  checkbox grid instead of typing `resource:action` strings from memory,
+  organize related clients into folders, get usage examples (`curl`
+  snippets) the moment a key is issued.
+- **IoT devices** -- register a reader, see recent check-in events, and
+  read an in-app explanation of exactly how the integration contract
+  works (what the device sends, what it gets back, how a new credential
+  gets enrolled).
+- **Usage** -- request/login graphs and storage usage over time, sampled
+  every 10 minutes, no Prometheus required (though it's there too).
+- **Audit log** -- filterable, and updates live over WebSocket as new
+  entries happen.
+- **Settings** -- read-only view of the running config, including the
+  org-wide default password and password policy (visible here and in
+  server config only, nowhere else).
+- **My account** -- self-service avatar upload, TOTP MFA enrollment, and
+  WebAuthn security key registration.
+
+The whole UI is permission-aware: `/api/v1/me` returns the signed-in
+user's resolved permissions, and the nav/action buttons hide whatever
+that user isn't allowed to do, instead of showing it and letting the API
+reject it after the fact.
+
+## Why you might use this
+
+- **One binary, your choice of database.** Point `IDPFORGE_DB_DSN` at
+  Postgres, MySQL/MariaDB, MSSQL, a managed service (Supabase, RDS, Azure
+  SQL, ...), or just use SQLite for a single-node setup. Migrations apply
+  automatically on startup.
+- **Actually clusters.** Turn on Redis and run more than one instance:
+  sessions and the RBAC permission cache are shared, background jobs
+  (update checker, health alerts, metrics sampler) elect a leader via a
+  DB-backed lease instead of tripling their own work, and the realtime
+  WebSocket feed fans out across instances via Redis pub/sub.
+- **Onboarding that can't leak a chosen password.** Every new account
+  gets one server-configured default password and is forced to change it
+  on first login. No API anywhere accepts a caller-chosen password for
+  someone else, and none ever returns a password value.
+- **Talks to your other apps.** A real OIDC provider (`authorization_code`
+  + mandatory PKCE, `refresh_token`, `client_credentials` for
+  service-to-service auth, JWKS, discovery) for anything that speaks
+  OpenID Connect -- GitLab, Harbor, Rancher, Grafana, Jenkins, Vault,
+  NiFi, MinIO, and so on -- plus a forward-auth endpoint for legacy apps
+  behind Traefik that don't speak SSO at all.
+- **Automatable.** Scoped API-client tokens (grant exactly the
+  `resource:action` scopes a script or AI assistant needs), a simpler
+  field-filtered `/external/v1` path for apps that just need "verify a
+  login" or "provision a user," and an IoT check-in API for physical
+  access control (badge/face/fingerprint readers) where matching happens
+  on the device and this server only ever sees an opaque reference.
+- **Tells you when something's wrong.** Health-check state changes and
+  new-version notices show up as in-app announcements in the same
+  notification bell everyone already sees, not buried in a log file.
 
 ## Quickstart (Docker Compose)
 
@@ -77,9 +123,25 @@ archives for `linux/amd64`, `linux/arm64`, `windows/amd64`, `windows/arm64`.
 
 ## Configuration
 
-Copy `.env.example`, fill in `IDPFORGE_DB_DSN` at minimum. See
-[docs/platform-support.md](docs/platform-support.md) for the full variable
-list and [docs/runbook.md](docs/runbook.md) for operations.
+Copy `.env.example`, fill in `IDPFORGE_DB_DSN` at minimum. Notable knobs
+beyond the database connection:
+
+| Variable | What it controls |
+|---|---|
+| `IDPFORGE_DEFAULT_PASSWORD` | The one password every new/reset account gets, forced to change on first login |
+| `IDPFORGE_PASSWORD_MIN_LENGTH`, `IDPFORGE_PASSWORD_REQUIRE_*` | Complexity policy for self-chosen passwords |
+| `IDPFORGE_ACCOUNT_LOCKOUT_MAX_ATTEMPTS`, `_WINDOW`, `_DURATION` | Per-account login lockout, independent of the per-IP rate limit |
+| `IDPFORGE_REDIS_ENABLED` | Session sharing, RBAC cache sharing, and cross-instance realtime -- turn this on to actually cluster |
+| `IDPFORGE_TIMEZONE` | IdpForge's own reference zone for schedules/logs; timestamps in the UI always render in each viewer's own browser zone regardless |
+| `IDPFORGE_UPDATE_CHECK_ENABLED` | Poll GitHub Releases and post an in-app notice when a newer version is out (never auto-updates) |
+
+See [docs/platform-support.md](docs/platform-support.md) for the full
+variable list and [docs/runbook.md](docs/runbook.md) for operations.
+
+**A note on SQLite**: it's the zero-config default for trying IdpForge out,
+but it's a single local file -- no real concurrent-write support and no
+way to share it across multiple instances. Use Postgres, MySQL, or MSSQL
+for anything beyond a single small-team, single-instance deployment.
 
 ## Deploying as a service
 
@@ -89,7 +151,7 @@ list and [docs/runbook.md](docs/runbook.md) for operations.
 Both `scripts/bootstrap.sh` and `scripts/bootstrap.ps1` set up config/data/
 log directories idempotently.
 
-## Registering an application
+## Registering an OIDC application
 
 ```bash
 scripts/add-app.sh      # Linux/macOS
@@ -112,14 +174,25 @@ See [docs/integration-matrix.md](docs/integration-matrix.md).
 
 ## API clients (scoped tokens, AI/automation access)
 
-See [docs/api-clients.md](docs/api-clients.md) for scope presets and
-examples.
+See [docs/api-clients.md](docs/api-clients.md) for scope presets,
+`/external/v1` examples (including provisioning a user), and the full
+`resource:action` reference.
 
 ## Monitoring
 
 See [docs/monitoring.md](docs/monitoring.md): a Prometheus scrape config
 and Grafana dashboard are in `deploy/monitoring/`, and the admin console
 has its own built-in usage graphs (`/usage`) that don't need either.
+
+## Contributing
+
+Issues and PRs welcome. The codebase is organized as one Go package per
+concern under `internal/` (`users`, `rbac`, `audit`, `apiclient`, `iot`,
+`auth/oidc`, `webauthn`, `mfa`, ...) each with its own repository struct
+and, increasingly, its own test file -- `internal/httpserver` (the HTTP
+layer) has real integration test coverage now, add to it rather than
+testing by hand. See [CHANGELOG.md](CHANGELOG.md) for what's shipped,
+including a "Known limitations" note on what's not built yet.
 
 ## License
 

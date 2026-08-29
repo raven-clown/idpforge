@@ -9,7 +9,9 @@ import "github.com/gofiber/fiber/v2"
 func (s *Server) handleGetSettings(c *fiber.Ctx) error {
 	cfg := s.cfg
 	return c.JSON(fiber.Map{
-		"env": cfg.Env,
+		"env":      cfg.Env,
+		"version":  s.version,
+		"timezone": cfg.Timezone,
 		"http": fiber.Map{
 			"listen_addr": cfg.HTTP.ListenAddr,
 			"base_url":    cfg.HTTP.BaseURL,
@@ -48,5 +50,18 @@ func (s *Server) handleGetSettings(c *fiber.Ctx) error {
 			"backend": cfg.Storage.Backend,
 		},
 		"password_expiry_days": cfg.PasswordExpiryDays,
+		// default_password is intentionally shown here: this endpoint is the
+		// admin-only back office view (settings:read), and it is the one
+		// place besides server config (IDPFORGE_DEFAULT_PASSWORD) an admin
+		// can see it. It is still never exposed for any individual user's
+		// actual current password.
+		"default_password": cfg.DefaultPassword,
+		"password_policy": fiber.Map{
+			"min_length":        cfg.PasswordPolicy.MinLength,
+			"require_uppercase": cfg.PasswordPolicy.RequireUppercase,
+			"require_lowercase": cfg.PasswordPolicy.RequireLowercase,
+			"require_number":    cfg.PasswordPolicy.RequireNumber,
+			"require_special":   cfg.PasswordPolicy.RequireSpecial,
+		},
 	})
 }

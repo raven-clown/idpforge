@@ -1,9 +1,9 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`bg-panel border border-border rounded-xl p-5 shadow-sm animate-fade-in ${className}`}
+      className={`bg-panel border border-border rounded-xl p-5 shadow-sm ${className}`}
     >
       {children}
     </div>
@@ -41,6 +41,62 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
       {...props}
       className={`w-full px-3 py-2 bg-input-bg border border-border rounded-lg text-sm text-text focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft transition-colors ${props.className ?? ""}`}
     />
+  );
+}
+
+export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...props}
+      className={`w-full px-3 py-2 bg-input-bg border border-border rounded-lg text-sm text-text focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft transition-colors ${props.className ?? ""}`}
+    />
+  );
+}
+
+// A <select> with presets plus a free-text fallback, for fields the
+// backend treats as free text (so operators aren't locked out of a value
+// that isn't on the common list) but that almost always take one of a
+// handful of known values -- picking beats typing from memory.
+export function SelectOrCustom({
+  value,
+  onChange,
+  options,
+  otherLabel = "Other (custom)",
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  otherLabel?: string;
+  placeholder?: string;
+}) {
+  const [customMode, setCustomMode] = useState(value !== "" && !options.includes(value));
+  return (
+    <>
+      <Select
+        value={customMode ? "__custom__" : value}
+        onChange={(e) => {
+          if (e.target.value === "__custom__") {
+            setCustomMode(true);
+            onChange("");
+          } else {
+            setCustomMode(false);
+            onChange(e.target.value);
+          }
+        }}
+      >
+        <option value="">Select...</option>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+        <option value="__custom__">{otherLabel}</option>
+      </Select>
+      {customMode && (
+        <Input className="mt-2" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoFocus />
+      )}
+    </>
   );
 }
 
@@ -86,6 +142,51 @@ export function H1({ icon, children }: { icon: ReactNode; children: ReactNode })
       {icon}
       {children}
     </h1>
+  );
+}
+
+// Prev/Next pagination for list pages that could realistically grow past
+// what's sane to render in one flat table (users, audit log, device
+// events). hasNext is inferred from whether this page came back full --
+// no separate total-count query needed.
+export function Pagination({
+  offset,
+  limit,
+  count,
+  onPrev,
+  onNext,
+}: {
+  offset: number;
+  limit: number;
+  count: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const hasPrev = offset > 0;
+  const hasNext = count === limit;
+  if (!hasPrev && !hasNext) return null;
+  return (
+    <div className="flex items-center justify-between mt-3 text-xs text-muted">
+      <span>
+        Showing {count === 0 ? 0 : offset + 1}–{offset + count}
+      </span>
+      <div className="flex gap-2">
+        <button
+          onClick={onPrev}
+          disabled={!hasPrev}
+          className="px-3 py-1.5 rounded-lg border border-border disabled:opacity-40 hover:border-accent hover:text-text transition-colors"
+        >
+          Previous
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!hasNext}
+          className="px-3 py-1.5 rounded-lg border border-border disabled:opacity-40 hover:border-accent hover:text-text transition-colors"
+        >
+          Next
+        </button>
+      </div>
+    </div>
   );
 }
 

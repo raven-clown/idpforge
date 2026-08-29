@@ -75,10 +75,44 @@
   }
 }
 
+html {
+  /* Reserves the scrollbar's width on every page, scrollable or not, so
+     navigating between a tall page and a short one doesn't shift the
+     layout sideways by the scrollbar's width. */
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+/* A transparent track plus an inset (content-box) thumb reads as a small
+   floating pill disconnected from its track, not a scrollbar -- so the
+   track gets a solid, distinguishable-from-page background instead, and
+   the thumb fills the full width of the bar. */
+* {
+  scrollbar-color: var(--border) var(--bg);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
 }
 
 .animate-fade-in {

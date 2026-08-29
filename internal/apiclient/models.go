@@ -13,8 +13,14 @@ import (
 )
 
 type Client struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Folder is an optional organizational label (e.g. "Team Frontend",
+	// "Onboarding automation"). Purely for grouping/filtering the admin
+	// UI's list -- it grants nothing on its own. Multiple people needing
+	// the same access can already share one client's key today; Folder
+	// just makes a set of related clients easy to find.
+	Folder        string   `json:"folder,omitempty"`
 	AllowedFields []string `json:"allowed_fields"`
 	// Scopes are "resource:action" grants, same format as the roles/
 	// permissions system, including a "resource/*" wildcard.

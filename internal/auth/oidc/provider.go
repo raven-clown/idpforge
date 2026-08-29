@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -96,7 +97,11 @@ type TokenResponse struct {
 
 // ExchangeCode implements the authorization_code grant with mandatory PKCE
 // verifier check.
-func (p *Provider) ExchangeCode(ctx context.Context, clientID, code, redirectURI, codeVerifier string) (*TokenResponse, error) {
+func (p *Provider) ExchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI, codeVerifier string) (*TokenResponse, error) {
+	if err := p.authenticateClient(ctx, clientID, clientSecret); err != nil {
+		return nil, err
+	}
+
 	raw, ok, err := p.cache.Get(ctx, "oidc:code:"+code)
 	if err != nil {
 		return nil, err
@@ -121,7 +126,11 @@ func (p *Provider) ExchangeCode(ctx context.Context, clientID, code, redirectURI
 }
 
 // RefreshTokens implements the refresh_token grant.
-func (p *Provider) RefreshTokens(ctx context.Context, clientID, refreshToken string) (*TokenResponse, error) {
+func (p *Provider) RefreshTokens(ctx context.Context, clientID, clientSecret, refreshToken string) (*TokenResponse, error) {
+	if err := p.authenticateClient(ctx, clientID, clientSecret); err != nil {
+		return nil, err
+	}
+
 	key := "oidc:refresh:" + hashToken(refreshToken)
 	raw, ok, err := p.cache.Get(ctx, key)
 	if err != nil {
@@ -144,6 +153,52 @@ func (p *Provider) RefreshTokens(ctx context.Context, clientID, refreshToken str
 	_ = p.cache.Delete(ctx, key) // rotate on use
 
 	return p.issueTokens(ctx, clientID, record.UserID, record.Scope, true)
+}
+
+// authenticateClient looks up clientID and, for a confidential client (one
+// registered with a client_secret_hash), verifies clientSecret against it
+// in constant time. A client registered with no secret hash is a public
+// client (an SPA relying on PKCE alone) and needs none. This is the check
+// that was previously missing entirely: the token endpoint accepted
+// client_secret without ever comparing it to anything.
+func (p *Provider) authenticateClient(ctx context.Context, clientID, clientSecret string) error {
+	client, err := p.clients.Get(ctx, clientID)
+	if err != nil {
+		return fmt.Errorf("unknown client")
+	}
+	if client.SecretHash == "" {
+		return nil
+	}
+	if subtle.ConstantTimeCompare([]byte(hashClientSecret(clientSecret)), []byte(client.SecretHash)) != 1 {
+		return fmt.Errorf("invalid client credentials")
+	}
+	return nil
+}
+
+// hashClientSecret matches scripts/add-app.sh's `openssl dgst -sha256`
+// hex digest, since that's what's stored as client_secret_hash today.
+func hashClientSecret(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return fmt.Sprintf("%x", sum)
+}
+
+// ClientCredentials implements the client_credentials grant (RFC 6749
+// §4.4): plain OAuth 2.0 machine-to-machine auth, no user or browser
+// involved. The token's sub is the client itself, scoped to exactly
+// whatever allowed_scopes the client was registered with -- a caller-
+// supplied scope parameter is intentionally never consulted, so a client
+// can't ask for more than it was granted. No refresh token, per the
+// RFC's own recommendation for this grant: a service just requests a new
+// token with its credentials again when the old one expires.
+func (p *Provider) ClientCredentials(ctx context.Context, clientID, clientSecret string) (*TokenResponse, error) {
+	if err := p.authenticateClient(ctx, clientID, clientSecret); err != nil {
+		return nil, err
+	}
+	client, err := p.clients.Get(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("unknown client")
+	}
+	return p.issueTokens(ctx, clientID, clientID, strings.Join(client.AllowedScopes, " "), false)
 }
 
 func (p *Provider) issueTokens(ctx context.Context, clientID, userID, scope string, withRefresh bool) (*TokenResponse, error) {
@@ -252,7 +307,7 @@ func (p *Provider) DiscoveryDocument() map[string]interface{} {
 		"scopes_supported":                      []string{"openid", "profile", "email", "roles"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials"},
 	}
 }
 

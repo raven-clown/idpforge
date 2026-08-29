@@ -49,7 +49,7 @@ export default function ChangePasswordPage() {
           Password change required
         </div>
         <p className="text-muted text-sm text-center mb-5">
-          Your password has expired and must be changed before continuing.
+          Your password must be changed before continuing.
         </p>
         <Panel className="shadow-lg">
           {error && (
@@ -58,7 +58,7 @@ export default function ChangePasswordPage() {
           <form onSubmit={handleSubmit}>
             <Label>Current password</Label>
             <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-            <Label>New password (at least 8 characters)</Label>
+            <Label>New password (min. 8 characters, with uppercase, lowercase, a number, and a special character)</Label>
             <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
             <Label>Confirm new password</Label>
             <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={8} />

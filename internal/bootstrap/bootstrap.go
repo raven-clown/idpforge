@@ -26,6 +26,7 @@ var adminPermissions = [][2]string{
 	{"audit", "read"},
 	{"metrics", "read"},
 	{"settings", "read"},
+	{"announcements", "manage"},
 }
 
 // Run creates the first admin user, role, and permissions if the users

@@ -50,6 +50,15 @@ func (s *Service) Confirm(ctx context.Context, userID, code string) error {
 	return err
 }
 
+// Disable turns MFA back off and clears the stored secret, so it can't be
+// reused if re-enrolled later.
+func (s *Service) Disable(ctx context.Context, userID string) error {
+	q := fmt.Sprintf(`UPDATE users SET mfa_enabled = %s, mfa_secret = %s WHERE id = %s`,
+		s.db.Placeholder(1), s.db.Placeholder(2), s.db.Placeholder(3))
+	_, err := s.db.ExecContext(ctx, q, false, "", userID)
+	return err
+}
+
 func (s *Service) Verify(ctx context.Context, userID, code string) (bool, error) {
 	secret, err := s.secretFor(ctx, userID)
 	if err != nil {

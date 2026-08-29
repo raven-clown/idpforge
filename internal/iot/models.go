@@ -8,10 +8,16 @@ package iot
 import "time"
 
 type Device struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	DeviceType string    `json:"device_type"`
-	Location   string    `json:"location,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	DeviceType string `json:"device_type"`
+	Location   string `json:"location,omitempty"`
+	// Folder is an optional organizational label (e.g. "Building A doors")
+	// for grouping/filtering the admin UI's device list. Each device keeps
+	// its own individually-revocable key regardless of folder -- sharing
+	// one key across physical readers would mean compromising any one of
+	// them compromises all of them.
+	Folder     string    `json:"folder,omitempty"`
 	AllowedIPs []string  `json:"allowed_ips,omitempty"`
 	Enabled    bool      `json:"enabled"`
 	CreatedAt  time.Time `json:"created_at"`

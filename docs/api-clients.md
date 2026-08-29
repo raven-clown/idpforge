@@ -43,10 +43,14 @@ groups exactly, and each has a `read` action, a coarser `manage` action
 
 | Resource | Actions | Covers |
 |---|---|---|
-| `users` | `read`, `manage` | list/get users (`read`); create/update/delete/offboard/device-credentials (`manage`) |
+| `users` | `read`, `manage` | list/get users (`read`); create/update/delete/offboard/device-credentials/reset-password (`manage`) |
 | `rbac` | `manage` | roles, permissions, groups, and all role/group/user assignment endpoints |
 | `iot` | `read`, `manage` | query device event history (`read`); register devices (`manage`) |
 | `api_clients` | `manage` | create/list/delete other API clients |
+| `audit` | `read` | query the audit log |
+| `metrics` | `read` | usage graph history |
+| `settings` | `read` | the read-only settings view (includes the default password -- grant carefully) |
+| `announcements` | `manage` | post a system-wide announcement (also readable by anyone signed in, no scope needed) |
 
 These are plain strings checked by `requirePermission`, not rows that have
 to exist anywhere first, so any of the combinations above just work.
@@ -61,7 +65,7 @@ example) rather than these fixed route groups.
 | AI assistant, read-only | `["users:read", "iot:read"]` | Can look up users and query IoT event history. Cannot create/edit/delete anything. |
 | AI assistant, can manage users | `["users:read", "users:manage"]` | Add `users:manage` only if the assistant should create/update/offboard users on your behalf. |
 | Full admin token | `["users:manage", "rbac:manage", "iot:manage", "api_clients:manage"]` | Equivalent to what a human admin can do. Grant sparingly. |
-| Canteen kiosk / door controller | none (uses `X-Device-Key`, not this token type) | See [integration-matrix.md](integration-matrix.md); hardware check-ins go through `/iot/checkin`, not `/api/v1`. |
+| Canteen kiosk / door controller | none (uses `X-Device-Key`, not this token type) | See [integration-matrix.md](integration-matrix.md); hardware check-ins go through `/device/v1/checkin`, not `/api/v1`. |
 | Read-only auditing tool | `["users:read", "iot:read", "api_clients:manage"]` | `api_clients:manage` is required to list clients since there's no separate read-only action for that resource. |
 
 ## Simple field-filtered access (`/external/v1`, no scopes)
@@ -83,6 +87,25 @@ curl -X POST https://sso.example.com/external/v1/login \
 
 The response only ever contains the fields listed in `allowed_fields`,
 regardless of what the underlying user record holds.
+
+### Provisioning a user (the one write action here)
+
+A client can also create a user through this same simple path -- for an
+HR system or onboarding tool that shouldn't need the full `/api/v1` admin
+API. Unlike everywhere else on `/external/v1`, this one action does
+require an explicit scope: `users:manage`.
+
+```bash
+curl -X POST https://sso.example.com/external/v1/users \
+  -H "X-API-Key: apik_..." \
+  -d '{"username": "newhire", "email": "newhire@example.com", "employee_id": "EMP-00123"}'
+```
+
+Same rule as every other creation path in IdpForge: there is no
+`password` field. The account is created with the server-configured
+default password and forced to change it on first login. The response is
+filtered through the client's `allowed_fields`, same as `/external/v1/login`
+and `/external/v1/users/:id`.
 
 ## Shared controls
 

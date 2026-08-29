@@ -1,0 +1,5 @@
+CREATE TABLE leader_leases (
+	job_name VARCHAR(64) PRIMARY KEY,
+	holder_id VARCHAR(64) NOT NULL,
+	expires_at TIMESTAMP NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -44,6 +44,13 @@ var (
 		},
 		[]string{"route"},
 	)
+
+	WebSocketConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "idpforge_websocket_connections",
+			Help: "Currently open realtime WebSocket connections on this instance.",
+		},
+	)
 )
 
 func init() {
@@ -53,5 +60,6 @@ func init() {
 		LoginAttemptsTotal,
 		AuditQueueDepth,
 		RateLimitRejectionsTotal,
+		WebSocketConnections,
 	)
 }

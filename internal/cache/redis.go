@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -81,4 +82,30 @@ func (r *RedisCache) Increment(ctx context.Context, key string, ttl time.Duratio
 
 func (r *RedisCache) Close() error {
 	return r.client.Close()
+}
+
+// Publish and Subscribe back the realtime hub's cross-instance fan-out
+// (see internal/httpserver/ws.go): with Redis enabled, an announcement or
+// audit event posted on one instance reaches browsers connected to every
+// other instance too, not just the one that handled the request. Not part
+// of the Cache interface -- pub/sub across processes only means anything
+// for Redis, never the in-memory single-node fallback.
+func (r *RedisCache) Publish(ctx context.Context, channel string, message []byte) error {
+	return r.client.Publish(ctx, channel, message).Err()
+}
+
+// Subscribe returns a channel of message payloads on the given Redis
+// channel. The returned func must be called to release the subscription;
+// it's safe to call more than once.
+func (r *RedisCache) Subscribe(ctx context.Context, channel string) (<-chan []byte, func()) {
+	sub := r.client.Subscribe(ctx, channel)
+	out := make(chan []byte)
+	go func() {
+		defer close(out)
+		for msg := range sub.Channel() {
+			out <- []byte(msg.Payload)
+		}
+	}()
+	var once sync.Once
+	return out, func() { once.Do(func() { _ = sub.Close() }) }
 }

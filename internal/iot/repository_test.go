@@ -24,7 +24,7 @@ func TestDeviceKeyAuthentication(t *testing.T) {
 	repo := NewRepository(database)
 	ctx := context.Background()
 
-	device, apiKey, err := repo.CreateDevice(ctx, "front-door", "card_reader", "lobby", nil)
+	device, apiKey, err := repo.CreateDevice(ctx, "front-door", "card_reader", "lobby", "", nil)
 	if err != nil {
 		t.Fatalf("CreateDevice: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestHasEventToday(t *testing.T) {
 	ctx := context.Background()
 
 	userID := seedUser(t, ctx, repo, "alice")
-	device, _, err := repo.CreateDevice(ctx, "canteen-kiosk", "face_2d", "canteen", nil)
+	device, _, err := repo.CreateDevice(ctx, "canteen-kiosk", "face_2d", "canteen", "", nil)
 	if err != nil {
 		t.Fatalf("CreateDevice: %v", err)
 	}

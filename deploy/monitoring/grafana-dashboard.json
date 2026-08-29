@@ -76,30 +76,53 @@
     },
     {
       "id": 5,
+      "title": "Account lockouts (rejected login attempts)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum(rate(idpforge_login_attempts_total{outcome=\"locked\"}[5m]))",
+          "legendFormat": "locked out"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 6,
       "title": "Audit queue depth",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 16 },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [{ "expr": "idpforge_audit_queue_depth" }],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
     },
     {
-      "id": 6,
+      "id": 7,
       "title": "Goroutines",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 16 },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [{ "expr": "go_goroutines" }],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
     },
     {
-      "id": 7,
+      "id": 8,
       "title": "Memory in use",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 16 },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [{ "expr": "go_memstats_alloc_bytes" }],
       "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "title": "Live WebSocket connections",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(idpforge_websocket_connections)" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
     }
   ]
 }

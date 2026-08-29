@@ -12,9 +12,13 @@ import (
 )
 
 type createDeviceRequest struct {
-	Name       string   `json:"name"`
-	DeviceType string   `json:"device_type"`
-	Location   string   `json:"location"`
+	Name       string `json:"name"`
+	DeviceType string `json:"device_type"`
+	Location   string `json:"location"`
+	// Folder is an optional organizational label, purely for grouping in
+	// the admin UI's list. Each device still gets its own individually-
+	// revocable key regardless of folder.
+	Folder     string   `json:"folder"`
 	AllowedIPs []string `json:"allowed_ips"`
 }
 
@@ -27,7 +31,7 @@ func (s *Server) handleCreateDevice(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "name and device_type are required")
 	}
 
-	device, apiKey, err := s.iot.CreateDevice(c.Context(), req.Name, req.DeviceType, req.Location, req.AllowedIPs)
+	device, apiKey, err := s.iot.CreateDevice(c.Context(), req.Name, req.DeviceType, req.Location, req.Folder, req.AllowedIPs)
 	if err != nil {
 		return fiber.NewError(fiber.StatusConflict, "could not create device")
 	}

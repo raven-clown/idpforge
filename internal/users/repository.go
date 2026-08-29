@@ -24,6 +24,10 @@ func NewRepository(database *db.DB) *Repository {
 	return &Repository{db: database}
 }
 
+// Create inserts a new local account with an admin/system-assigned
+// password (the org-wide default; see config.DefaultPassword), always
+// flagged to force a change on first login. There is no path to create a
+// user with a caller-chosen password.
 func (r *Repository) Create(ctx context.Context, in CreateInput) (*User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -36,26 +40,33 @@ func (r *Repository) Create(ctx context.Context, in CreateInput) (*User, error) 
 		source = "local"
 	}
 
-	q := fmt.Sprintf(`INSERT INTO users (id, username, email, password_hash, status, source)
-VALUES (%s, %s, %s, %s, %s, %s)`,
+	q := fmt.Sprintf(`INSERT INTO users (id, username, email, employee_id, password_hash, status, source, force_password_change)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s)`,
 		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3),
-		r.db.Placeholder(4), r.db.Placeholder(5), r.db.Placeholder(6))
+		r.db.Placeholder(4), r.db.Placeholder(5), r.db.Placeholder(6), r.db.Placeholder(7), r.db.Placeholder(8))
 
-	if _, err := r.db.ExecContext(ctx, q, id, in.Username, in.Email, string(hash), string(StatusActive), source); err != nil {
+	if _, err := r.db.ExecContext(ctx, q, id, in.Username, in.Email, nullableString(in.EmployeeID), string(hash), string(StatusActive), source, true); err != nil {
 		return nil, err
 	}
 	return r.Get(ctx, id)
 }
 
+const selectUserColumns = `id, username, email, employee_id, status, mfa_enabled, source, external_id, avatar_url, force_password_change, created_at, updated_at, last_login_at`
+
+func nullableString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func (r *Repository) Get(ctx context.Context, id string) (*User, error) {
-	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, avatar_url, created_at, updated_at, last_login_at
-FROM users WHERE id = %s`, r.db.Placeholder(1))
+	q := fmt.Sprintf(`SELECT %s FROM users WHERE id = %s`, selectUserColumns, r.db.Placeholder(1))
 	return r.scanOne(r.db.QueryRowContext(ctx, q, id))
 }
 
 func (r *Repository) GetByUsername(ctx context.Context, username string) (*User, error) {
-	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, avatar_url, created_at, updated_at, last_login_at
-FROM users WHERE username = %s`, r.db.Placeholder(1))
+	q := fmt.Sprintf(`SELECT %s FROM users WHERE username = %s`, selectUserColumns, r.db.Placeholder(1))
 	return r.scanOne(r.db.QueryRowContext(ctx, q, username))
 }
 
@@ -66,16 +77,44 @@ func (r *Repository) SetAvatar(ctx context.Context, id, avatarURL string) error 
 }
 
 // SetPassword updates the password hash and resets password_changed_at,
-// clearing any pending expiry.
+// clearing any pending expiry and the forced-change flag. Used for
+// self-service password changes, where the caller supplies their own
+// new password.
 func (r *Repository) SetPassword(ctx context.Context, id, newPassword string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	q := fmt.Sprintf(`UPDATE users SET password_hash = %s, password_changed_at = %s WHERE id = %s`,
-		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3))
-	_, err = r.db.ExecContext(ctx, q, string(hash), time.Now().UTC(), id)
+	q := fmt.Sprintf(`UPDATE users SET password_hash = %s, password_changed_at = %s, force_password_change = %s WHERE id = %s`,
+		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3), r.db.Placeholder(4))
+	_, err = r.db.ExecContext(ctx, q, string(hash), time.Now().UTC(), false, id)
 	return err
+}
+
+// AssignDefaultPassword resets a user's password to the server-configured
+// default and flags the account to force a change on next login. It never
+// accepts a caller-chosen password: the value always comes from server
+// config (config.DefaultPassword), never from an API request. Used both
+// when creating a new local account and when an admin resets one.
+func (r *Repository) AssignDefaultPassword(ctx context.Context, id, defaultPassword string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	q := fmt.Sprintf(`UPDATE users SET password_hash = %s, password_changed_at = %s, force_password_change = %s WHERE id = %s`,
+		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3), r.db.Placeholder(4))
+	res, err := r.db.ExecContext(ctx, q, string(hash), time.Now().UTC(), true, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // PasswordAge returns how long it has been since this user's password was
@@ -107,8 +146,8 @@ func (r *Repository) PasswordHash(ctx context.Context, username string) (string,
 }
 
 func (r *Repository) List(ctx context.Context, limit, offset int) ([]*User, error) {
-	q := fmt.Sprintf(`SELECT id, username, email, status, mfa_enabled, source, external_id, avatar_url, created_at, updated_at, last_login_at
-FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s`, r.db.Placeholder(1), r.db.Placeholder(2))
+	q := fmt.Sprintf(`SELECT %s FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s`,
+		selectUserColumns, r.db.Placeholder(1), r.db.Placeholder(2))
 
 	rows, err := r.db.QueryContext(ctx, q, limit, offset)
 	if err != nil {
@@ -138,6 +177,13 @@ func (r *Repository) Update(ctx context.Context, id string, in UpdateInput) (*Us
 	if in.Status != nil {
 		q := fmt.Sprintf(`UPDATE users SET status = %s WHERE id = %s`, r.db.Placeholder(1), r.db.Placeholder(2))
 		if _, err := r.db.ExecContext(ctx, q, string(*in.Status), id); err != nil {
+			return nil, err
+		}
+	}
+	if in.EmployeeID != nil {
+		q := fmt.Sprintf(`UPDATE users SET employee_id = %s, updated_at = %s WHERE id = %s`,
+			r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3))
+		if _, err := r.db.ExecContext(ctx, q, nullableString(*in.EmployeeID), time.Now().UTC(), id); err != nil {
 			return nil, err
 		}
 	}
@@ -172,15 +218,16 @@ func (r *Repository) VerifyPassword(hash, password string) bool {
 
 func (r *Repository) scanOne(row *sql.Row) (*User, error) {
 	var u User
-	var externalID, avatarURL sql.NullString
+	var employeeID, externalID, avatarURL sql.NullString
 	var lastLogin sql.NullTime
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &avatarURL, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &employeeID, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &avatarURL, &u.ForcePasswordChange, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
+	u.EmployeeID = employeeID.String
 	u.ExternalID = externalID.String
 	u.AvatarURL = avatarURL.String
 	if lastLogin.Valid {
@@ -196,12 +243,13 @@ type rowScanner interface {
 
 func scanRow(rows rowScanner) (*User, error) {
 	var u User
-	var externalID, avatarURL sql.NullString
+	var employeeID, externalID, avatarURL sql.NullString
 	var lastLogin sql.NullTime
-	err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &avatarURL, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
+	err := rows.Scan(&u.ID, &u.Username, &u.Email, &employeeID, &u.Status, &u.MFAEnabled, &u.Source, &externalID, &avatarURL, &u.ForcePasswordChange, &u.CreatedAt, &u.UpdatedAt, &lastLogin)
 	if err != nil {
 		return nil, err
 	}
+	u.EmployeeID = employeeID.String
 	u.ExternalID = externalID.String
 	u.AvatarURL = avatarURL.String
 	if lastLogin.Valid {

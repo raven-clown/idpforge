@@ -74,6 +74,6 @@ func extOf(path string) string {
 }
 
 var apiPathPrefixes = []string{
-	"/api/", "/oauth2/", "/external/", "/iot/", "/forwardauth/",
+	"/api/", "/oauth2/", "/external/", "/device/", "/forwardauth/",
 	"/.well-known/", "/healthz", "/metrics",
 }

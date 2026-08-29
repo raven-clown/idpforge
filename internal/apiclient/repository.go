@@ -26,7 +26,7 @@ func NewRepository(database *db.DB) *Repository {
 	return &Repository{db: database}
 }
 
-func (r *Repository) Create(ctx context.Context, name string, allowedFields, scopes, allowedIPs []string, rateLimitMax, rateLimitWindowSeconds int) (*Client, string, error) {
+func (r *Repository) Create(ctx context.Context, name, folder string, allowedFields, scopes, allowedIPs []string, rateLimitMax, rateLimitWindowSeconds int) (*Client, string, error) {
 	apiKey, err := randomKey()
 	if err != nil {
 		return nil, "", err
@@ -48,21 +48,21 @@ func (r *Repository) Create(ctx context.Context, name string, allowedFields, sco
 	}
 
 	id := uuid.NewString()
-	q := fmt.Sprintf(`INSERT INTO api_clients (id, name, api_key_hash, allowed_fields, scopes, allowed_ips, rate_limit_max, rate_limit_window_seconds)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s)`,
-		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3), r.db.Placeholder(4), r.db.Placeholder(5), r.db.Placeholder(6), r.db.Placeholder(7), r.db.Placeholder(8))
-	if _, err := r.db.ExecContext(ctx, q, id, name, hashKey(apiKey), string(fieldsJSON), string(scopesJSON), string(ipsJSON), rateLimitMax, rateLimitWindowSeconds); err != nil {
+	q := fmt.Sprintf(`INSERT INTO api_clients (id, name, folder, api_key_hash, allowed_fields, scopes, allowed_ips, rate_limit_max, rate_limit_window_seconds)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)`,
+		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3), r.db.Placeholder(4), r.db.Placeholder(5), r.db.Placeholder(6), r.db.Placeholder(7), r.db.Placeholder(8), r.db.Placeholder(9))
+	if _, err := r.db.ExecContext(ctx, q, id, name, nullableString(folder), hashKey(apiKey), string(fieldsJSON), string(scopesJSON), string(ipsJSON), rateLimitMax, rateLimitWindowSeconds); err != nil {
 		return nil, "", err
 	}
 
 	return &Client{
-		ID: id, Name: name, AllowedFields: allowedFields, Scopes: scopes, AllowedIPs: allowedIPs,
+		ID: id, Name: name, Folder: folder, AllowedFields: allowedFields, Scopes: scopes, AllowedIPs: allowedIPs,
 		RateLimitMax: rateLimitMax, RateLimitWindowSeconds: rateLimitWindowSeconds, Enabled: true,
 	}, apiKey, nil
 }
 
 func (r *Repository) List(ctx context.Context) ([]Client, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, name, allowed_fields, scopes, allowed_ips, rate_limit_max, rate_limit_window_seconds, enabled, created_at FROM api_clients ORDER BY name`)
+	rows, err := r.db.QueryContext(ctx, `SELECT id, name, folder, allowed_fields, scopes, allowed_ips, rate_limit_max, rate_limit_window_seconds, enabled, created_at FROM api_clients ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (r *Repository) List(ctx context.Context) ([]Client, error) {
 }
 
 func (r *Repository) Authenticate(ctx context.Context, apiKey string) (*Client, error) {
-	q := fmt.Sprintf(`SELECT id, name, allowed_fields, scopes, allowed_ips, rate_limit_max, rate_limit_window_seconds, enabled, created_at
+	q := fmt.Sprintf(`SELECT id, name, folder, allowed_fields, scopes, allowed_ips, rate_limit_max, rate_limit_window_seconds, enabled, created_at
 FROM api_clients WHERE api_key_hash = %s AND enabled = %s`, r.db.Placeholder(1), r.db.Placeholder(2))
 	row := r.db.QueryRowContext(ctx, q, hashKey(apiKey), true)
 	c, err := scanClient(row)
@@ -103,10 +103,11 @@ type rowScanner interface {
 func scanClient(row rowScanner) (*Client, error) {
 	var c Client
 	var fieldsJSON string
-	var scopesJSON, ipsJSON sql.NullString
-	if err := row.Scan(&c.ID, &c.Name, &fieldsJSON, &scopesJSON, &ipsJSON, &c.RateLimitMax, &c.RateLimitWindowSeconds, &c.Enabled, &c.CreatedAt); err != nil {
+	var folder, scopesJSON, ipsJSON sql.NullString
+	if err := row.Scan(&c.ID, &c.Name, &folder, &fieldsJSON, &scopesJSON, &ipsJSON, &c.RateLimitMax, &c.RateLimitWindowSeconds, &c.Enabled, &c.CreatedAt); err != nil {
 		return nil, err
 	}
+	c.Folder = folder.String
 	if err := json.Unmarshal([]byte(fieldsJSON), &c.AllowedFields); err != nil {
 		return nil, fmt.Errorf("decode allowed_fields: %w", err)
 	}
@@ -121,6 +122,13 @@ func scanClient(row rowScanner) (*Client, error) {
 		}
 	}
 	return &c, nil
+}
+
+func nullableString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func randomKey() (string, error) {

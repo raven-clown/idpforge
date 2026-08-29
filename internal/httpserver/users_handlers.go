@@ -11,27 +11,35 @@ import (
 )
 
 type createUserRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	EmployeeID string `json:"employee_id"`
 }
 
+// handleCreateUser never accepts a caller-chosen password: every new
+// account is created with the server-configured default password
+// (IDPFORGE_DEFAULT_PASSWORD) and force_password_change set, so the first
+// thing a new employee does is set their own.
 func (s *Server) handleCreateUser(c *fiber.Ctx) error {
 	var req createUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	if req.Username == "" || req.Email == "" || req.Password == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "username, email, and password are required")
+	if req.Username == "" || req.Email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "username and email are required")
+	}
+	if s.cfg.DefaultPassword == "" {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "IDPFORGE_DEFAULT_PASSWORD is not configured")
 	}
 
 	user, err := s.users.Create(c.Context(), users.CreateInput{
-		Username: req.Username,
-		Email:    req.Email,
-		Password: req.Password,
+		Username:   req.Username,
+		Email:      req.Email,
+		EmployeeID: req.EmployeeID,
+		Password:   s.cfg.DefaultPassword,
 	})
 	if err != nil {
-		return fiber.NewError(fiber.StatusConflict, "could not create user")
+		return fiber.NewError(fiber.StatusConflict, "could not create user (username, email, or employee ID already in use?)")
 	}
 
 	after, _ := json.Marshal(user)
@@ -50,6 +58,42 @@ func (s *Server) handleCreateUser(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(user)
+}
+
+// handleResetUserPassword resets a user's password back to the
+// server-configured default and forces a change on their next login.
+// Like create, it takes no password in the request body: there is no API
+// path to set an arbitrary password for someone else, and no API path to
+// read one back — this handler returns the User object only, never the
+// password value.
+func (s *Server) handleResetUserPassword(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if s.cfg.DefaultPassword == "" {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "IDPFORGE_DEFAULT_PASSWORD is not configured")
+	}
+
+	if err := s.users.AssignDefaultPassword(c.Context(), id, s.cfg.DefaultPassword); err != nil {
+		if err == users.ErrNotFound {
+			return fiber.NewError(fiber.StatusNotFound, "user not found")
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "could not reset password")
+	}
+
+	user, err := s.users.Get(c.Context(), id)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "user not found")
+	}
+
+	s.audit.Log(audit.Entry{
+		ActorID:        actorID(c),
+		ActorIP:        c.IP(),
+		ActorUserAgent: c.Get("User-Agent"),
+		Action:         "user.reset_password",
+		TargetResource: id,
+		Status:         "success",
+	})
+
+	return c.JSON(user)
 }
 
 func (s *Server) handleGetUser(c *fiber.Ctx) error {
@@ -75,8 +119,9 @@ func (s *Server) handleListUsers(c *fiber.Ctx) error {
 }
 
 type updateUserRequest struct {
-	Email  *string `json:"email"`
-	Status *string `json:"status"`
+	Email      *string `json:"email"`
+	EmployeeID *string `json:"employee_id"`
+	Status     *string `json:"status"`
 }
 
 func (s *Server) handleUpdateUser(c *fiber.Ctx) error {
@@ -87,7 +132,7 @@ func (s *Server) handleUpdateUser(c *fiber.Ctx) error {
 
 	before, _ := s.users.Get(c.Context(), c.Params("id"))
 
-	in := users.UpdateInput{Email: req.Email}
+	in := users.UpdateInput{Email: req.Email, EmployeeID: req.EmployeeID}
 	if req.Status != nil {
 		st := users.Status(*req.Status)
 		in.Status = &st

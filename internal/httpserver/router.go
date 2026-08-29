@@ -1,5 +1,7 @@
 package httpserver
 
+import "github.com/gofiber/contrib/websocket"
+
 func (s *Server) registerRoutes() {
 	s.app.Get("/healthz", s.handleHealth)
 	s.app.Get("/metrics", s.handleMetrics)
@@ -28,6 +30,7 @@ func (s *Server) registerRoutes() {
 	u.Patch("/:id", s.requirePermission("users", "manage"), s.handleUpdateUser)
 	u.Delete("/:id", s.requirePermission("users", "manage"), s.handleDeleteUser)
 	u.Post("/:id/offboard", s.requirePermission("users", "manage"), s.handleOffboardUser)
+	u.Post("/:id/reset-password", s.requirePermission("users", "manage"), s.handleResetUserPassword)
 	u.Post("/:id/device-credentials", s.requirePermission("users", "manage"), s.handleAddDeviceCredential)
 	u.Get("/:id/device-credentials", s.requirePermission("users", "read"), s.handleListDeviceCredentials)
 	u.Delete("/:id/device-credentials/:cred_id", s.requirePermission("users", "manage"), s.handleDeleteDeviceCredential)
@@ -50,6 +53,7 @@ func (s *Server) registerRoutes() {
 	m.Post("/enroll", s.handleMFAEnroll)
 	m.Post("/confirm", s.handleMFAConfirm)
 	m.Post("/verify", s.handleMFAVerify)
+	m.Post("/disable", s.handleMFADisable)
 
 	rbacGroup := api.Group("/rbac", s.requirePermission("rbac", "manage"))
 	rbacGroup.Post("/roles", s.handleCreateRole)
@@ -86,20 +90,40 @@ func (s *Server) registerRoutes() {
 	api.Get("/metrics/history", s.requirePermission("metrics", "read"), s.handleMetricsHistory)
 	api.Get("/settings", s.requirePermission("settings", "read"), s.handleGetSettings)
 
+	// Announcements: any signed-in user can read them, only an admin
+	// (or the update-checker, server-side) can post one.
+	api.Get("/announcements", s.handleListAnnouncements)
+	api.Post("/announcements", s.requirePermission("announcements", "manage"), s.handleCreateAnnouncement)
+
+	// Realtime feed (audit events + announcements) over WebSocket, open to
+	// any signed-in user -- announcements are for everyone, audit events
+	// are filtered per-connection inside the hub based on audit:read.
+	// Browser WebSocket clients can't set custom headers, so this only
+	// supports session-cookie auth, not X-API-Key.
+	api.Get("/ws", s.wsAuthContext, wsUpgradeGuard, websocket.New(s.handleWS))
+
 	// Device-authenticated (X-Device-Key), not a user session: hardware
 	// check-in endpoint for badge/face/fingerprint readers, door
-	// controllers, kiosks.
-	iotDevice := s.app.Group("/iot", s.requireDeviceKey)
+	// controllers, kiosks. Deliberately NOT under /iot -- that path is also
+	// the SPA's IoT admin page, and Fiber's prefix-matched Use middleware
+	// (which is what Group(prefix, handlers...) registers) would otherwise
+	// intercept every browser request to the admin page and demand an
+	// X-Device-Key before the page ever got a chance to render.
+	iotDevice := s.app.Group("/device/v1", s.requireDeviceKey)
 	iotDevice.Post("/checkin", s.handleDeviceCheckin)
 
 	// API-key authenticated (X-API-Key), not a user session: the simple,
 	// field-filtered, per-client-rate-limited path for apps or AI services
 	// that just need "verify a login" or "look up a user", with no RBAC
 	// scopes required. For full read/write access to the real admin API,
-	// grant scopes and use /api/v1 instead.
+	// grant scopes and use /api/v1 instead. Creating a user is the one
+	// write action available here (for a provisioning/HR integration),
+	// and it does require the users:manage scope, checked inside the
+	// handler -- everything else on this path stays scope-free.
 	external := s.app.Group("/external/v1", s.requireAPIClient)
 	external.Post("/login", s.handleExternalLogin)
 	external.Get("/users/:id", s.handleExternalGetUser)
+	external.Post("/users", s.handleExternalCreateUser)
 
 	fa := s.app.Group("/forwardauth")
 	fa.Get("/", s.handleForwardAuth)

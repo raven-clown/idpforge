@@ -36,16 +36,22 @@ const post = <T,>(path: string, body?: unknown) =>
 const patch = <T,>(path: string, body?: unknown) =>
   request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined });
 const del = <T,>(path: string) => request<T>(path, { method: "DELETE" });
+// For endpoints that take a raw binary body (avatar upload) instead of
+// JSON -- skips the default JSON content-type header.
+const postRaw = <T,>(path: string, body: Blob, contentType: string) =>
+  request<T>(path, { method: "POST", body, headers: { "Content-Type": contentType } });
 
 export interface User {
   id: string;
   username: string;
   email: string;
+  employee_id?: string;
   status: "active" | "suspended" | "disabled";
   mfa_enabled: boolean;
   source: string;
   external_id?: string;
   avatar_url?: string;
+  force_password_change: boolean;
   created_at: string;
   updated_at: string;
   last_login_at?: string;
@@ -72,6 +78,7 @@ export interface Group {
 export interface ApiClient {
   id: string;
   name: string;
+  folder?: string;
   allowed_fields: string[];
   scopes?: string[];
   allowed_ips?: string[];
@@ -86,6 +93,7 @@ export interface Device {
   name: string;
   device_type: string;
   location?: string;
+  folder?: string;
   allowed_ips?: string[];
   enabled: boolean;
   created_at: string;
@@ -121,16 +129,27 @@ export interface AuditEntry {
   timestamp: string;
 }
 
+export interface Announcement {
+  id: number;
+  message: string;
+  level: "info" | "warning" | "critical";
+  created_by?: string;
+  created_at: string;
+}
+
 export interface MetricsSnapshot {
   timestamp: string;
   http_requests: number;
   login_success: number;
   login_failure: number;
   rate_limit_rejections: number;
+  storage_bytes: number;
 }
 
 export interface Settings {
   env: string;
+  version: string;
+  timezone: string;
   http: { listen_addr: string; base_url: string };
   database: { driver: string; dsn: string };
   redis: { enabled: boolean; addr: string };
@@ -151,6 +170,14 @@ export interface Settings {
   backup: { enabled: boolean; dir: string; schedule: string; retention_days: number };
   storage: { backend: string };
   password_expiry_days: number;
+  default_password: string;
+  password_policy: {
+    min_length: number;
+    require_uppercase: boolean;
+    require_lowercase: boolean;
+    require_number: boolean;
+    require_special: boolean;
+  };
 }
 
 export const api = {
@@ -162,14 +189,15 @@ export const api = {
   logout: () => post<{ status: string }>("/api/v1/logout"),
 
   users: {
-    list: () => get<{ users: User[] }>("/api/v1/users?limit=500"),
+    list: (limit = 50, offset = 0) => get<{ users: User[] }>(`/api/v1/users?limit=${limit}&offset=${offset}`),
     get: (id: string) => get<User>(`/api/v1/users/${id}`),
-    create: (username: string, email: string, password: string) =>
-      post<User>("/api/v1/users", { username, email, password }),
-    update: (id: string, body: { email?: string; status?: string }) =>
+    create: (username: string, email: string, employee_id?: string) =>
+      post<User>("/api/v1/users", { username, email, employee_id }),
+    update: (id: string, body: { email?: string; employee_id?: string; status?: string }) =>
       patch<User>(`/api/v1/users/${id}`, body),
     remove: (id: string) => del<void>(`/api/v1/users/${id}`),
     offboard: (id: string) => post<User>(`/api/v1/users/${id}/offboard`),
+    resetPassword: (id: string) => post<User>(`/api/v1/users/${id}/reset-password`),
     credentials: (id: string) =>
       get<{ credentials: DeviceCredential[] }>(`/api/v1/users/${id}/device-credentials`),
     addCredential: (id: string, credential_type: string, credential_ref: string, label: string) =>
@@ -207,10 +235,31 @@ export const api = {
       del<void>(`/api/v1/rbac/users/${userId}/roles/${roleId}`),
   },
 
+  mfa: {
+    enroll: () => post<{ secret: string; otpauth_url: string }>("/api/v1/mfa/enroll"),
+    confirm: (code: string) => post<{ status: string }>("/api/v1/mfa/confirm", { code }),
+    disable: (current_password: string) => post<{ status: string }>("/api/v1/mfa/disable", { current_password }),
+  },
+
+  webauthn: {
+    // Shape is go-webauthn's own base64url-string-encoded
+    // PublicKeyCredentialCreationOptions, not the browser's native
+    // ArrayBuffer-based type -- treated as opaque JSON here and decoded
+    // in web/lib/webauthn.ts before handing it to navigator.credentials.
+    registerBegin: () => post<Record<string, unknown>>("/api/v1/webauthn/register/begin"),
+    registerFinish: (body: unknown) => post<{ status: string }>("/api/v1/webauthn/register/finish", body),
+  },
+
+  avatar: {
+    upload: (id: string, file: Blob, contentType: string) =>
+      postRaw<{ avatar_url: string }>(`/api/v1/users/${id}/avatar`, file, contentType),
+  },
+
   apiClients: {
     list: () => get<{ clients: ApiClient[] }>("/api/v1/api-clients"),
     create: (body: {
       name: string;
+      folder?: string;
       scopes: string[];
       allowed_fields: string[];
       allowed_ips: string[];
@@ -222,7 +271,7 @@ export const api = {
 
   iot: {
     devices: () => get<{ devices: Device[] }>("/api/v1/iot/devices"),
-    createDevice: (body: { name: string; device_type: string; location: string; allowed_ips: string[] }) =>
+    createDevice: (body: { name: string; device_type: string; location: string; folder?: string; allowed_ips: string[] }) =>
       post<{ device: Device; api_key: string }>("/api/v1/iot/devices", body),
     events: (params = "") => get<{ events: DeviceEvent[] }>(`/api/v1/iot/events${params}`),
   },
@@ -231,4 +280,10 @@ export const api = {
   metricsHistory: (days = 30) =>
     get<{ snapshots: MetricsSnapshot[] }>(`/api/v1/metrics/history?days=${days}`),
   settings: () => get<Settings>("/api/v1/settings"),
+
+  announcements: {
+    list: () => get<{ announcements: Announcement[] }>("/api/v1/announcements"),
+    create: (message: string, level: Announcement["level"] = "info") =>
+      post<Announcement>("/api/v1/announcements", { message, level }),
+  },
 };

@@ -59,19 +59,24 @@ func (s *Server) handleToken(c *fiber.Ctx) error {
 
 	switch grantType {
 	case "authorization_code":
-		resp, err := s.oidc.ExchangeCode(c.Context(), clientID, c.FormValue("code"), c.FormValue("redirect_uri"), c.FormValue("code_verifier"))
+		resp, err := s.oidc.ExchangeCode(c.Context(), clientID, clientSecret, c.FormValue("code"), c.FormValue("redirect_uri"), c.FormValue("code_verifier"))
 		if err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 		return c.JSON(resp)
 	case "refresh_token":
-		resp, err := s.oidc.RefreshTokens(c.Context(), clientID, c.FormValue("refresh_token"))
+		resp, err := s.oidc.RefreshTokens(c.Context(), clientID, clientSecret, c.FormValue("refresh_token"))
+		if err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		return c.JSON(resp)
+	case "client_credentials":
+		resp, err := s.oidc.ClientCredentials(c.Context(), clientID, clientSecret)
 		if err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 		return c.JSON(resp)
 	default:
-		_ = clientSecret // client_secret verification happens against the applications config once client auth hardening lands
 		return fiber.NewError(fiber.StatusBadRequest, "unsupported grant_type")
 	}
 }

@@ -7,10 +7,14 @@ import (
 
 	"github.com/raven-clown/idpforge/internal/apiclient"
 	"github.com/raven-clown/idpforge/internal/audit"
+	"github.com/raven-clown/idpforge/internal/users"
 )
 
 type createAPIClientRequest struct {
 	Name string `json:"name"`
+	// Folder is an optional organizational label, purely for grouping in
+	// the admin UI's list -- it grants nothing on its own.
+	Folder string `json:"folder"`
 	// AllowedFields governs the simple /external/v1 read-only path.
 	AllowedFields []string `json:"allowed_fields"`
 	// Scopes are "resource:action" grants for the full /api/v1 admin API,
@@ -42,7 +46,7 @@ func (s *Server) handleCreateAPIClient(c *fiber.Ctx) error {
 		return err
 	}
 
-	client, apiKey, err := s.apiClients.Create(c.Context(), req.Name, req.AllowedFields, req.Scopes, req.AllowedIPs, req.RateLimitMax, req.RateLimitWindowSeconds)
+	client, apiKey, err := s.apiClients.Create(c.Context(), req.Name, req.Folder, req.AllowedFields, req.Scopes, req.AllowedIPs, req.RateLimitMax, req.RateLimitWindowSeconds)
 	if err != nil {
 		return fiber.NewError(fiber.StatusConflict, "could not create API client")
 	}
@@ -101,6 +105,67 @@ func (s *Server) handleExternalLogin(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(filterUserForClient(user, client.AllowedFields))
+}
+
+type externalCreateUserRequest struct {
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	EmployeeID string `json:"employee_id"`
+}
+
+// handleExternalCreateUser lets an integration create an account through
+// the same simple path it already uses for login/lookup, for apps that
+// provision users (an HR system, an onboarding tool) without needing the
+// full /api/v1 admin API. Gated behind the users:manage scope, same as
+// the admin path -- an /external/v1 client with only read access (no
+// scopes) still can't write. Like every other creation path, it never
+// accepts a password: the account gets the server-configured default and
+// is forced to change it on first login, and the response is filtered
+// through the client's own allowed_fields like every other /external/v1
+// response.
+func (s *Server) handleExternalCreateUser(c *fiber.Ctx) error {
+	client := c.Locals("api_client").(*apiclient.Client)
+	if !client.HasScope("users", "manage") {
+		return fiber.NewError(fiber.StatusForbidden, "this API client is not scoped for users:manage")
+	}
+
+	var req externalCreateUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if req.Username == "" || req.Email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "username and email are required")
+	}
+	if s.cfg.DefaultPassword == "" {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "IDPFORGE_DEFAULT_PASSWORD is not configured")
+	}
+
+	user, err := s.users.Create(c.Context(), users.CreateInput{
+		Username:   req.Username,
+		Email:      req.Email,
+		EmployeeID: req.EmployeeID,
+		Password:   s.cfg.DefaultPassword,
+	})
+	if err != nil {
+		return fiber.NewError(fiber.StatusConflict, "could not create user (username, email, or employee ID already in use?)")
+	}
+
+	after, _ := json.Marshal(user)
+	s.audit.Log(audit.Entry{
+		ActorID:        actorID(c),
+		ActorIP:        c.IP(),
+		ActorUserAgent: c.Get("User-Agent"),
+		Action:         "user.create",
+		TargetResource: user.ID,
+		AfterState:     after,
+		Status:         "success",
+	})
+
+	if err := s.rbac.Invalidate(c.Context(), user.ID); err != nil {
+		s.log.Warn("rbac cache invalidate failed", "user_id", user.ID, "error", err)
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(filterUserForClient(user, client.AllowedFields))
 }
 
 func (s *Server) handleExternalGetUser(c *fiber.Ctx) error {

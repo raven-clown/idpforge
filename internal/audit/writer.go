@@ -21,9 +21,19 @@ type Writer struct {
 	batchSize     int
 	flushInterval time.Duration
 	logger        *slog.Logger
+	onLog         func(Entry)
 
 	wg   sync.WaitGroup
 	stop chan struct{}
+}
+
+// SetOnLog registers a callback invoked synchronously from Log for every
+// entry, before it's queued for the batched DB insert. Used to fan entries
+// out to live WebSocket subscribers without waiting on the flush interval;
+// the DB insert remains the durable source of truth regardless of what
+// this callback does.
+func (w *Writer) SetOnLog(fn func(Entry)) {
+	w.onLog = fn
 }
 
 func NewWriter(database *db.DB, queueSize, batchSize int, flushInterval time.Duration, logger *slog.Logger) *Writer {
@@ -45,6 +55,9 @@ func NewWriter(database *db.DB, queueSize, batchSize int, flushInterval time.Dur
 func (w *Writer) Log(e Entry) {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
+	}
+	if w.onLog != nil {
+		w.onLog(e)
 	}
 	select {
 	case w.queue <- e:

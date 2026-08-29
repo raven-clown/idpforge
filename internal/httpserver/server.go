@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 
+	"github.com/raven-clown/idpforge/internal/announcements"
 	"github.com/raven-clown/idpforge/internal/apiclient"
 	"github.com/raven-clown/idpforge/internal/audit"
 	"github.com/raven-clown/idpforge/internal/auth/oidc"
@@ -46,9 +47,12 @@ type Server struct {
 	health      *health.Checker
 	iot         *iot.Repository
 	apiClients  *apiclient.Repository
+	announce    *announcements.Repository
 	sessions    *sessionStore
 	cache       cache.Cache
 	log         *slog.Logger
+	hub         *realtimeHub
+	version     string
 
 	rateLimitGlobal fiber.Handler
 	rateLimitLogin  fiber.Handler
@@ -70,8 +74,10 @@ type Deps struct {
 	Health      *health.Checker
 	IoT         *iot.Repository
 	APIClients  *apiclient.Repository
+	Announce    *announcements.Repository
 	Cache       cache.Cache
 	Logger      *slog.Logger
+	Version     string
 }
 
 func New(d Deps) *Server {
@@ -91,9 +97,15 @@ func New(d Deps) *Server {
 		health:      d.Health,
 		iot:         d.IoT,
 		apiClients:  d.APIClients,
+		announce:    d.Announce,
 		sessions:    newSessionStore(d.Cache),
 		cache:       d.Cache,
 		log:         d.Logger,
+		hub:         newRealtimeHub(redisCacheOrNil(d.Cache)),
+		version:     d.Version,
+	}
+	if d.Audit != nil {
+		d.Audit.SetOnLog(s.hub.onAuditLog)
 	}
 
 	s.app = fiber.New(fiber.Config{
@@ -102,6 +114,8 @@ func New(d Deps) *Server {
 	})
 	s.app.Use(requestid.New())
 	s.app.Use(metricsMiddleware)
+	s.app.Use(securityHeaders(d.Config.Env))
+	s.app.Use(csrfOriginCheck(d.Config.HTTP.BaseURL))
 
 	global, login := rateLimitMiddlewares(d.Config.RateLimit, s.sessions)
 	s.rateLimitGlobal = global
@@ -147,4 +161,12 @@ func (s *Server) Listen(addr string) error {
 
 func (s *Server) ShutdownWithTimeout(d time.Duration) error {
 	return s.app.ShutdownWithTimeout(d)
+}
+
+// redisCacheOrNil returns c as a *cache.RedisCache when Redis is actually
+// in use, or nil for the in-memory single-node fallback -- realtimeHub
+// uses this to decide whether it can fan broadcasts out across instances.
+func redisCacheOrNil(c cache.Cache) *cache.RedisCache {
+	rc, _ := c.(*cache.RedisCache)
+	return rc
 }

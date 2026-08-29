@@ -29,7 +29,7 @@ func NewRepository(database *db.DB) *Repository {
 	return &Repository{db: database}
 }
 
-func (r *Repository) CreateDevice(ctx context.Context, name, deviceType, location string, allowedIPs []string) (*Device, string, error) {
+func (r *Repository) CreateDevice(ctx context.Context, name, deviceType, location, folder string, allowedIPs []string) (*Device, string, error) {
 	apiKey, err := randomKey()
 	if err != nil {
 		return nil, "", err
@@ -39,16 +39,16 @@ func (r *Repository) CreateDevice(ctx context.Context, name, deviceType, locatio
 		return nil, "", err
 	}
 	id := uuid.NewString()
-	q := fmt.Sprintf(`INSERT INTO iot_devices (id, name, device_type, location, api_key_hash, allowed_ips) VALUES (%s, %s, %s, %s, %s, %s)`,
-		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3), r.db.Placeholder(4), r.db.Placeholder(5), r.db.Placeholder(6))
-	if _, err := r.db.ExecContext(ctx, q, id, name, deviceType, location, hashKey(apiKey), string(ipsJSON)); err != nil {
+	q := fmt.Sprintf(`INSERT INTO iot_devices (id, name, device_type, location, folder, api_key_hash, allowed_ips) VALUES (%s, %s, %s, %s, %s, %s, %s)`,
+		r.db.Placeholder(1), r.db.Placeholder(2), r.db.Placeholder(3), r.db.Placeholder(4), r.db.Placeholder(5), r.db.Placeholder(6), r.db.Placeholder(7))
+	if _, err := r.db.ExecContext(ctx, q, id, name, deviceType, location, nullableString(folder), hashKey(apiKey), string(ipsJSON)); err != nil {
 		return nil, "", err
 	}
-	return &Device{ID: id, Name: name, DeviceType: deviceType, Location: location, AllowedIPs: allowedIPs, Enabled: true}, apiKey, nil
+	return &Device{ID: id, Name: name, DeviceType: deviceType, Location: location, Folder: folder, AllowedIPs: allowedIPs, Enabled: true}, apiKey, nil
 }
 
 func (r *Repository) ListDevices(ctx context.Context) ([]Device, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, name, device_type, location, allowed_ips, enabled, created_at FROM iot_devices ORDER BY name`)
+	rows, err := r.db.QueryContext(ctx, `SELECT id, name, device_type, location, folder, allowed_ips, enabled, created_at FROM iot_devices ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (r *Repository) ListDevices(ctx context.Context) ([]Device, error) {
 // AuthenticateDevice resolves an X-Device-Key header to its device, or
 // ErrNotFound if the key doesn't match an enabled device.
 func (r *Repository) AuthenticateDevice(ctx context.Context, apiKey string) (*Device, error) {
-	q := fmt.Sprintf(`SELECT id, name, device_type, location, allowed_ips, enabled, created_at FROM iot_devices WHERE api_key_hash = %s AND enabled = %s`,
+	q := fmt.Sprintf(`SELECT id, name, device_type, location, folder, allowed_ips, enabled, created_at FROM iot_devices WHERE api_key_hash = %s AND enabled = %s`,
 		r.db.Placeholder(1), r.db.Placeholder(2))
 	d, err := scanDevice(r.db.QueryRowContext(ctx, q, hashKey(apiKey), true))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -83,11 +83,12 @@ type rowScanner interface {
 
 func scanDevice(row rowScanner) (*Device, error) {
 	var d Device
-	var location, ipsJSON sql.NullString
-	if err := row.Scan(&d.ID, &d.Name, &d.DeviceType, &location, &ipsJSON, &d.Enabled, &d.CreatedAt); err != nil {
+	var location, folder, ipsJSON sql.NullString
+	if err := row.Scan(&d.ID, &d.Name, &d.DeviceType, &location, &folder, &ipsJSON, &d.Enabled, &d.CreatedAt); err != nil {
 		return nil, err
 	}
 	d.Location = location.String
+	d.Folder = folder.String
 	if ipsJSON.Valid && ipsJSON.String != "" {
 		if err := json.Unmarshal([]byte(ipsJSON.String), &d.AllowedIPs); err != nil {
 			return nil, fmt.Errorf("decode allowed_ips: %w", err)

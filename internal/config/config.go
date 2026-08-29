@@ -39,6 +39,55 @@ type Config struct {
 	// own SSO login only, not OS-level (Windows/Mac) accounts, which are a
 	// separate identity source unless federated via LDAP/AD.
 	PasswordExpiryDays int
+	// DefaultPassword, if set, is the password every admin-created account
+	// or admin-initiated reset gets, always paired with a forced change on
+	// next login. It is a server-side config value only: no API accepts,
+	// returns, or lets a caller choose an arbitrary password on someone
+	// else's behalf. Admins can view it from server config or the settings
+	// page (both are "back office" surfaces); it is never exposed through
+	// any endpoint that looks up another user's password.
+	DefaultPassword string
+	// PasswordPolicy applies to any self-service password a user chooses
+	// (change-password, forgot-password). It does not gate DefaultPassword,
+	// which is an operator-supplied config value, not user input.
+	PasswordPolicy PasswordPolicyConfig
+	// Timezone is IdpForge's own reference time zone (IANA name, e.g.
+	// "Asia/Bangkok"), shown in Settings for schedules/logs. It does not
+	// force how timestamps render elsewhere in the UI -- each viewer's
+	// browser already renders them in that viewer's own local time, which
+	// is what actually handles staff spread across time zones.
+	Timezone       string
+	UpdateCheck    UpdateCheckConfig
+	AccountLockout AccountLockoutConfig
+}
+
+// AccountLockoutConfig locks a specific username out of login after too
+// many failed attempts within Window, for Duration -- independent of and
+// in addition to the existing per-IP rate limit (RateLimitConfig), which
+// alone does nothing against an attacker spreading attempts across many
+// source IPs.
+type AccountLockoutConfig struct {
+	MaxAttempts int
+	Window      time.Duration
+	Duration    time.Duration
+}
+
+// UpdateCheckConfig controls the background check against GitHub Releases
+// that answers "is a newer IdpForge version out" for self-hosted
+// operators, surfaced as an in-app system announcement.
+type UpdateCheckConfig struct {
+	Enabled  bool
+	Interval time.Duration
+}
+
+// PasswordPolicyConfig sets the complexity rules enforced on any
+// self-chosen password.
+type PasswordPolicyConfig struct {
+	MinLength        int
+	RequireUppercase bool
+	RequireLowercase bool
+	RequireNumber    bool
+	RequireSpecial   bool
 }
 
 // BootstrapConfig creates the first admin account on a fresh install (empty
@@ -205,10 +254,32 @@ func Load() (*Config, error) {
 			AdminPassword: getEnv("IDPFORGE_BOOTSTRAP_ADMIN_PASSWORD", ""),
 		},
 		PasswordExpiryDays: getEnvInt("IDPFORGE_PASSWORD_EXPIRY_DAYS", 0),
+		DefaultPassword:    getEnv("IDPFORGE_DEFAULT_PASSWORD", ""),
+		PasswordPolicy: PasswordPolicyConfig{
+			MinLength:        getEnvInt("IDPFORGE_PASSWORD_MIN_LENGTH", 8),
+			RequireUppercase: getEnvBool("IDPFORGE_PASSWORD_REQUIRE_UPPERCASE", true),
+			RequireLowercase: getEnvBool("IDPFORGE_PASSWORD_REQUIRE_LOWERCASE", true),
+			RequireNumber:    getEnvBool("IDPFORGE_PASSWORD_REQUIRE_NUMBER", true),
+			RequireSpecial:   getEnvBool("IDPFORGE_PASSWORD_REQUIRE_SPECIAL", true),
+		},
+		Timezone: getEnv("IDPFORGE_TIMEZONE", "UTC"),
+		UpdateCheck: UpdateCheckConfig{
+			Enabled:  getEnvBool("IDPFORGE_UPDATE_CHECK_ENABLED", true),
+			Interval: getEnvDuration("IDPFORGE_UPDATE_CHECK_INTERVAL", 24*time.Hour),
+		},
+		AccountLockout: AccountLockoutConfig{
+			MaxAttempts: getEnvInt("IDPFORGE_ACCOUNT_LOCKOUT_MAX_ATTEMPTS", 5),
+			Window:      getEnvDuration("IDPFORGE_ACCOUNT_LOCKOUT_WINDOW", 15*time.Minute),
+			Duration:    getEnvDuration("IDPFORGE_ACCOUNT_LOCKOUT_DURATION", 15*time.Minute),
+		},
 	}
 
 	if cfg.Storage.Backend != "local" && cfg.Storage.Backend != "s3" {
 		return nil, fmt.Errorf("unsupported IDPFORGE_STORAGE_BACKEND %q (want local|s3)", cfg.Storage.Backend)
+	}
+
+	if _, err := time.LoadLocation(cfg.Timezone); err != nil {
+		return nil, fmt.Errorf("invalid IDPFORGE_TIMEZONE %q: %w", cfg.Timezone, err)
 	}
 
 	if cfg.DB.DSN == "" {

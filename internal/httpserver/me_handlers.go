@@ -1,6 +1,10 @@
 package httpserver
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+
+	"github.com/raven-clown/idpforge/internal/users"
+)
 
 // handleMe backs the SPA's "who am I" check on load: current user plus
 // whether a password change is required before anything else.
@@ -19,9 +23,22 @@ func (s *Server) handleMe(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "user not found")
 	}
 
+	// The frontend uses this to decide what to even show: hiding a nav
+	// link or an action button the user can't use is better than
+	// rendering it and letting the API 403 it after the fact.
+	resolved, err := s.rbac.Resolve(c.Context(), data.UserID)
+	permissions := []string{}
+	if err == nil {
+		for _, p := range resolved.Permissions {
+			permissions = append(permissions, p.Resource+":"+p.Action)
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"user":                 user,
 		"must_change_password": data.MustChangePassword,
+		"version":              s.version,
+		"permissions":          permissions,
 	})
 }
 
@@ -37,8 +54,8 @@ func (s *Server) handleChangePassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	if len(req.NewPassword) < 8 {
-		return fiber.NewError(fiber.StatusBadRequest, "new password must be at least 8 characters")
+	if err := users.ValidatePassword(req.NewPassword, s.cfg.PasswordPolicy); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 
 	user, err := s.users.Get(c.Context(), userID)
